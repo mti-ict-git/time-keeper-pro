@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { Shield, Lock, User, Eye, EyeOff, Clock, Users, Building2, Sun, Moon, Monitor } from 'lucide-react';
+import { Shield, Lock, User, Eye, EyeOff, Clock, Sun, Moon, Monitor, Activity, Users, CalendarCheck } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,21 +66,21 @@ const AdminLogin = () => {
     setIsLoading(false);
   };
 
-  const ThemeToggle = ({ className = '' }: { className?: string }) => (
+  const ThemeToggle = () => (
     mounted ? (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button 
-            variant="ghost" 
+            variant="outline" 
             size="icon" 
-            className={`h-10 w-10 rounded-xl ${className}`}
+            className="h-10 w-10 rounded-xl border-border/50 bg-card shadow-sm"
           >
             {theme === 'dark' ? (
-              <Moon className="h-5 w-5" />
+              <Moon className="h-4 w-4" />
             ) : theme === 'light' ? (
-              <Sun className="h-5 w-5" />
+              <Sun className="h-4 w-4" />
             ) : (
-              <Monitor className="h-5 w-5" />
+              <Monitor className="h-4 w-4" />
             )}
           </Button>
         </DropdownMenuTrigger>
@@ -99,214 +99,225 @@ const AdminLogin = () => {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    ) : null
+    ) : <div className="h-10 w-10" />
   );
 
+  const stats = [
+    { label: 'Active Employees', value: '248', icon: Users, color: 'bg-primary/10 text-primary' },
+    { label: 'Today\'s Check-ins', value: '186', icon: CalendarCheck, color: 'bg-accent/10 text-accent' },
+    { label: 'Attendance Rate', value: '94.2%', icon: Activity, color: 'bg-success/10 text-success' },
+  ];
+
   return (
-    <div className="min-h-screen flex">
-      {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-primary/80 relative overflow-hidden">
-        {/* Theme Toggle - Desktop */}
-        <div className="absolute top-6 right-6 z-20">
-          <ThemeToggle className="bg-white/10 hover:bg-white/20 text-white border-0" />
-        </div>
-
-        {/* Decorative elements */}
-        <div className="absolute inset-0">
-          <div className="absolute top-0 left-0 w-96 h-96 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-white/5 rounded-full translate-x-1/3 translate-y-1/3" />
-          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2" />
-        </div>
-        
-        {/* Content */}
-        <div className="relative z-10 flex flex-col justify-between p-12 text-white">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
-                <Clock className="h-8 w-8" />
-              </div>
-              <span className="text-2xl font-bold tracking-tight">AttendanceMS</span>
-            </div>
-            <p className="text-white/70 text-sm">Enterprise Workforce Management</p>
-          </div>
-          
-          <div className="space-y-8">
-            <div>
-              <h1 className="text-4xl font-bold leading-tight mb-4">
-                Streamline Your<br />
-                Workforce Management
-              </h1>
-              <p className="text-white/80 text-lg max-w-md">
-                A comprehensive solution for tracking attendance, managing schedules, 
-                and ensuring operational excellence across your organization.
-              </p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-lg">
-                  <Users className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="font-semibold">Employee Tracking</p>
-                  <p className="text-sm text-white/60">Real-time attendance monitoring</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-lg">
-                  <Building2 className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="font-semibold">Multi-Location</p>
-                  <p className="text-sm text-white/60">Centralized control center</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="text-sm text-white/50">
-            © 2025 AttendanceMS. Enterprise Edition v2.0
-          </div>
-        </div>
+    <div className="min-h-screen bg-muted/30">
+      {/* Theme Toggle - Fixed Position */}
+      <div className="fixed top-6 right-6 z-50">
+        <ThemeToggle />
       </div>
-      
-      {/* Right Panel - Login Form */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-background relative">
-        {/* Theme Toggle - Mobile */}
-        <div className="absolute top-6 right-6 lg:hidden">
-          <ThemeToggle className="border border-border bg-background hover:bg-muted" />
-        </div>
 
-        <div className="w-full max-w-md space-y-8">
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-2">
-              <div className="p-2 bg-primary/10 rounded-xl">
-                <Clock className="h-6 w-6 text-primary" />
+      <div className="min-h-screen flex flex-col lg:flex-row">
+        {/* Left Panel - Login Form */}
+        <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
+          <div className="w-full max-w-md space-y-8">
+            {/* Logo & Branding */}
+            <div className="text-center lg:text-left">
+              <div className="inline-flex items-center gap-3 mb-8">
+                <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/25">
+                  <Clock className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">AttendanceMS</h1>
+                  <p className="text-xs text-muted-foreground">Enterprise Edition</p>
+                </div>
               </div>
-              <span className="text-xl font-bold text-foreground">AttendanceMS</span>
+              
+              <div className="space-y-2">
+                <h2 className="text-3xl font-bold tracking-tight text-foreground">
+                  Welcome back! 👋
+                </h2>
+                <p className="text-muted-foreground">
+                  Sign in to access your administration dashboard
+                </p>
+              </div>
             </div>
-          </div>
-          
-          <div className="text-center lg:text-left">
-            <div className="inline-flex items-center justify-center lg:justify-start w-14 h-14 rounded-2xl bg-primary/10 mb-6">
-              <Shield className="w-7 h-7 text-primary" />
+
+            {/* Login Card */}
+            <Card className="border-0 shadow-xl shadow-primary/5 bg-card">
+              <CardContent className="pt-6 pb-8 px-6">
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="username" className="text-sm font-medium">
+                      Username
+                    </Label>
+                    <div className="relative">
+                      <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
+                          <User className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                      <Input
+                        id="username"
+                        type="text"
+                        placeholder="Enter your username"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        className="pl-14 h-12 bg-muted/50 border-0 focus:bg-background focus:ring-2 focus:ring-primary/20 transition-all"
+                        required
+                        autoComplete="username"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password" className="text-sm font-medium">
+                      Password
+                    </Label>
+                    <div className="relative">
+                      <div className="absolute left-0 top-0 bottom-0 w-12 flex items-center justify-center">
+                        <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
+                          <Lock className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Enter your password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="pl-14 pr-12 h-12 bg-muted/50 border-0 focus:bg-background focus:ring-2 focus:ring-primary/20 transition-all"
+                        required
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <Button 
+                    type="submit" 
+                    className="w-full h-12 text-base font-semibold rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all" 
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Signing in...
+                      </span>
+                    ) : (
+                      'Sign In'
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            {/* Security Notice */}
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border/50">
+              <div className="shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Shield className="h-5 w-5 text-primary" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Secure Access</p>
+                <p className="text-xs text-muted-foreground">
+                  Protected by enterprise-grade security
+                </p>
+              </div>
             </div>
-            <h2 className="text-3xl font-bold tracking-tight text-foreground">
-              Administrator Portal
-            </h2>
-            <p className="mt-2 text-muted-foreground">
-              Enter your credentials to access the management console
+
+            <p className="text-center text-xs text-muted-foreground">
+              © 2025 AttendanceMS. All rights reserved.
             </p>
           </div>
+        </div>
 
-          <Card className="border-0 shadow-xl bg-card/50 backdrop-blur-sm">
-            <CardContent className="pt-6">
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="space-y-2">
-                  <Label htmlFor="username" className="text-sm font-medium">
-                    Username
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="Enter your username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="pl-10 h-12 bg-background border-border/50 focus:border-primary transition-colors"
-                      required
-                      autoComplete="username"
-                    />
+        {/* Right Panel - Dashboard Preview */}
+        <div className="hidden lg:flex lg:w-[55%] bg-gradient-to-br from-primary/5 via-background to-accent/5 p-12 items-center justify-center">
+          <div className="w-full max-w-lg space-y-6">
+            {/* Preview Header */}
+            <div className="text-center mb-8">
+              <h3 className="text-2xl font-bold text-foreground mb-2">
+                Workforce Management Dashboard
+              </h3>
+              <p className="text-muted-foreground">
+                Real-time insights into your organization's attendance
+              </p>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              {stats.map((stat, index) => (
+                <Card key={index} className="border-0 shadow-lg shadow-primary/5 bg-card">
+                  <CardContent className="p-4 text-center">
+                    <div className={`w-10 h-10 rounded-xl ${stat.color} flex items-center justify-center mx-auto mb-3`}>
+                      <stat.icon className="h-5 w-5" />
+                    </div>
+                    <p className="text-2xl font-bold text-foreground">{stat.value}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{stat.label}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* Chart Preview */}
+            <Card className="border-0 shadow-lg shadow-primary/5 bg-card">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h4 className="font-semibold text-foreground">Weekly Overview</h4>
+                    <p className="text-xs text-muted-foreground">Attendance trends</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-lg font-bold text-primary">+12.5%</p>
+                    <p className="text-xs text-muted-foreground">vs last week</p>
                   </div>
                 </div>
                 
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="text-sm font-medium">
-                    Password
-                  </Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="Enter your password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 pr-10 h-12 bg-background border-border/50 focus:border-primary transition-colors"
-                      required
-                      autoComplete="current-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
+                {/* Fake Chart Bars */}
+                <div className="flex items-end justify-between gap-2 h-32 pt-4">
+                  {[65, 45, 80, 55, 90, 70, 85].map((height, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                      <div 
+                        className="w-full rounded-t-lg bg-gradient-to-t from-primary to-primary/60 transition-all duration-500"
+                        style={{ height: `${height}%` }}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Activity Preview */}
+            <Card className="border-0 shadow-lg shadow-primary/5 bg-card">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-semibold">
+                    ET
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-foreground">Hello, Admin!</p>
+                    <p className="text-sm text-muted-foreground">Check your activities in this dashboard.</p>
                   </div>
                 </div>
-
-                <Button 
-                  type="submit" 
-                  className="w-full h-12 text-base font-semibold shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all" 
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Authenticating...
-                    </span>
-                  ) : (
-                    'Sign In'
-                  )}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-4">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border/50"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Security Notice
-                </span>
-              </div>
-            </div>
-            
-            <div className="bg-muted/50 rounded-xl p-4 border border-border/50">
-              <div className="flex gap-3">
-                <div className="shrink-0 mt-0.5">
-                  <div className="p-1.5 bg-destructive/10 rounded-lg">
-                    <Shield className="h-4 w-4 text-destructive" />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">
-                    Authorized Personnel Only
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    This system is for authorized administrators. All access attempts are logged and monitored.
-                  </p>
-                </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           </div>
-          
-          <p className="text-center text-xs text-muted-foreground lg:hidden">
-            © 2025 AttendanceMS. Enterprise Edition
-          </p>
         </div>
       </div>
     </div>
