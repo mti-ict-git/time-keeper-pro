@@ -17,6 +17,86 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo warnings/errors remain unrelated to changes
 
+2026-02-05 23:59:07 WITA
+
+- Updated attendance API to derive schedule_label from MTIUsers combos using ScheduledClockIn/Out and next_day
+- Sorted attendance results from latest by date and time
+- Fixed type narrowing for next_day in attendance route
+- Enhanced inspect_attendance script to accept StaffNo argument and print scheduled times
+- Verified MTI250115 schedules: mostly 07:00–17:00, with 08:00–17:00 and overnight 19:00–07:00
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run inspect:attendance ran successfully for StaffNo MTI250115
+
+2026-02-06 00:01:05 WITA
+
+- Restricted attendance report default date range to yesterday and today when from/to are not provided
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to changes
+
+2026-02-06 00:04:30 WITA
+
+- Reverted attendance route: removed default date range filter; route only filters when from/to are explicitly provided
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 00:07:33 WITA
+
+- Checked DB schedules for StaffNo MTI250115 for today and yesterday using inspect script; no rows present for 2026-02-05 and 2026-02-06; latest rows observed are from 2025-10
+
+Verification:
+
+- npm run inspect:attendance -- MTI250115 executed successfully; output shows TrDate and scheduled times for 2025 entries only
+
+2026-02-06 00:10:17 WITA
+
+- Enhanced inspect_attendance script to support last2days range and trim StaffNo in WHERE; verified MTI250115 has a row on 2026-02-05 with schedule 07:00–17:00
+
+Verification:
+
+- npm run inspect:attendance -- MTI250115 last2days executed successfully; output shows the 2026-02-05 entry
+
+2026-02-06 00:26:48 WITA
+
+- Applied WITA (UTC+8) timezone formatting for Actual times in attendance report via formatTimeWita; display remains consistent with DB timezone
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 00:29:31 WITA
+
+- Added schedule label fallback to use ScheduledClockIn–ScheduledClockOut when MTIUsers combo is missing (e.g., 15:00–01:00 shows as label)
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 00:32:48 WITA
+
+- Investigated tblAttendanceRecord availability: listed tables with LIKE 'Attendance'; only tblAttendanceReport exists in current DB connection
+- Extended inspect script to query either report or record tables and to list tables; record mode shows table missing, explaining mismatch vs expected source
+
+Verification:
+
+- npm run inspect:attendance -- list Attendance executed successfully; output shows tblAttendanceReport only
+
+2026-02-06 00:35:16 WITA
+
+- Fixed schedule time formatting to use UTC hours for SQL time types to avoid timezone shifting (07:00–17:00 remains 07:00–17:00)
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.

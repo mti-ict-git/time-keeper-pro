@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import sql from "mssql";
 import { getPool } from "../db";
 import { getTableColumns } from "../utils/introspection";
-import { formatTime, formatDate } from "../utils/format";
+import { formatTime, formatDate, toBoolNextDay, formatTimeWita } from "../utils/format";
 
 export const attendanceRouter = Router();
 
@@ -57,9 +57,26 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     }
 
     const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
-    const query = `SELECT TOP ${limit} * FROM tblAttendanceReport${whereClause}`;
+    const timeCol = ["trdatetime"].find((n) => cols.some((c) => c.name.toLowerCase() === n)) || "";
+    const orderClause = dateColumn ? ` ORDER BY [${dateColumn}] DESC${timeCol ? `, [${timeCol}] DESC` : ""}` : "";
+    const query = `SELECT TOP ${limit} * FROM tblAttendanceReport${whereClause}${orderClause}`;
     const result = await request.query(query);
     const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
+
+    const comboQuery =
+      "SELECT description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM MTIUsers GROUP BY description, CONVERT(varchar(5), time_in, 108), CONVERT(varchar(5), time_out, 108), next_day";
+    const comboRes = await pool.request().query(comboQuery);
+    const comboRows = (comboRes.recordset ?? []) as Array<Record<string, unknown>>;
+    const comboMap = new Map<string, string>();
+    for (const r of comboRows) {
+      const ti = formatTime(r["time_in"]);
+      const to = formatTime(r["time_out"]);
+      const rawNd = r["next_day"] as string | number | boolean | null | undefined;
+      const nd = toBoolNextDay(rawNd ?? null);
+      const label = String(r["description"] ?? "");
+      const key = `${ti}|${to}|${nd ? 1 : 0}`;
+      if (ti && to && label) comboMap.set(key, label);
+    }
 
     
 
@@ -82,7 +99,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         department: String(dept),
         position_title: String(position),
         date: formatDate(dateRaw),
-        schedule_label: "",
+        schedule_label: String(obj["Description"] ?? obj["DayType"] ?? obj["day_type"] ?? obj["Schedule"] ?? obj["ScheduleName"] ?? ""),
         scheduled_in: "",
         scheduled_out: "",
         actual_in: "",
@@ -97,7 +114,18 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       const schedOut = formatTime(obj["ScheduledClockOut"] ?? obj["scheduled_clock_out"] ?? obj["scheduledout"] ?? "");
       if (schedIn) next["scheduled_in"] = schedIn;
       if (schedOut) next["scheduled_out"] = schedOut;
-      const actual = formatTime(dtRaw);
+      if (schedIn && schedOut) {
+        const [hi, mi] = schedIn.split(":");
+        const [ho, mo] = schedOut.split(":");
+        const minI = Number(hi) * 60 + Number(mi);
+        const minO = Number(ho) * 60 + Number(mo);
+        const nextDay = minO <= minI;
+        const comboKey = `${schedIn}|${schedOut}|${nextDay ? 1 : 0}`;
+        const labelFromCombo = comboMap.get(comboKey);
+        if (labelFromCombo) next["schedule_label"] = labelFromCombo;
+        else next["schedule_label"] = `${schedIn}-${schedOut}`;
+      }
+      const actual = formatTimeWita(dtRaw);
       if (ev.includes("in")) {
         const existing = String(next["actual_in"] || "");
         next["actual_in"] = existing && actual ? (existing < actual ? existing : actual) : actual || existing;
@@ -113,7 +141,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       agg.set(key, next);
     }
 
-    const data = Array.from(agg.values());
+    const data = Array.from(agg.values()).sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
     res.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
