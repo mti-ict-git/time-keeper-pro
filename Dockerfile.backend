@@ -1,0 +1,18 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
+RUN npm install
+
+# Copy backend source (used for initial build; in dev we mount volumes)
+COPY backend ./backend
+COPY tsconfig.node.json tsconfig.json ./
+
+ENV NODE_ENV=development
+
+EXPOSE 5001
+
+# Default command runs backend in watch mode
+CMD ["npm", "run", "server:dev"]

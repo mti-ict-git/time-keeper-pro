@@ -36,10 +36,12 @@ export const SchedulingDBTable = () => {
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [divisionFilter, setDivisionFilter] = useState<string>("all");
   const [sectionFilter, setSectionFilter] = useState<string>("all");
+  const [dayTypeFilter, setDayTypeFilter] = useState<string>("all");
 
   useEffect(() => {
     setLoading(true);
-    fetchSchedulingEmployees()
+    const param = dayTypeFilter !== "all" ? { dayType: dayTypeFilter } : undefined;
+    fetchSchedulingEmployees(param)
       .then((rows) => {
         const mapped = rows.map((r) => ({
           ...r,
@@ -50,12 +52,12 @@ export const SchedulingDBTable = () => {
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [dayTypeFilter]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((e) => e.department))).filter(Boolean).sort(), [data]);
   const divisions = useMemo(() => Array.from(new Set(data.map((e) => e.division))).filter(Boolean).sort(), [data]);
   const sections = useMemo(() => Array.from(new Set(data.map((e) => e.section))).filter(Boolean).sort(), [data]);
-  const dayTypes = useMemo(() => Array.from(new Set(data.map((e) => e.dayType))).filter(Boolean).sort(), [data]);
+  const dayTypes = useMemo(() => Array.from(new Set(data.map((e) => e.description))).filter(Boolean).sort(), [data]);
   const timesIn = useMemo(() => Array.from(new Set(data.map((e) => e.timeIn))).filter(Boolean).sort(), [data]);
   const timesOut = useMemo(() => Array.from(new Set(data.map((e) => e.timeOut))).filter(Boolean).sort(), [data]);
 
@@ -200,14 +202,15 @@ export const SchedulingDBTable = () => {
       const matchesDepartment = departmentFilter === "all" || emp.department === departmentFilter;
       const matchesDivision = divisionFilter === "all" || emp.division === divisionFilter;
       const matchesSection = sectionFilter === "all" || emp.section === sectionFilter;
+      const matchesDayType = dayTypeFilter === "all" || emp.description === dayTypeFilter;
       const matchesSearch =
         globalFilter === "" ||
         emp.name.toLowerCase().includes(globalFilter.toLowerCase()) ||
         emp.employeeId.toLowerCase().includes(globalFilter.toLowerCase());
 
-      return matchesDepartment && matchesDivision && matchesSection && matchesSearch;
+      return matchesDepartment && matchesDivision && matchesSection && matchesDayType && matchesSearch;
     });
-  }, [data, departmentFilter, divisionFilter, sectionFilter, globalFilter]);
+  }, [data, departmentFilter, divisionFilter, sectionFilter, dayTypeFilter, globalFilter]);
 
   const columns: ColumnDef<SchedulingEmployee>[] = [
     {
@@ -236,7 +239,7 @@ export const SchedulingDBTable = () => {
     {
       id: "dayType",
       header: "Day Type",
-      cell: ({ row }) => <span className="text-sm">{row.original.dayType || "—"}</span>,
+      cell: ({ row }) => <span className="text-sm">{row.original.description || "—"}</span>,
     },
     {
       id: "timeIn",
@@ -327,6 +330,18 @@ export const SchedulingDBTable = () => {
             <SelectItem value="all">All Sections</SelectItem>
             {sections.map((sec) => (
               <SelectItem key={sec} value={sec}>{sec}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={dayTypeFilter} onValueChange={setDayTypeFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="All Day Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Day Types</SelectItem>
+            {dayTypes.map((dt) => (
+              <SelectItem key={dt} value={dt}>{dt}</SelectItem>
             ))}
           </SelectContent>
         </Select>

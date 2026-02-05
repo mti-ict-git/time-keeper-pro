@@ -1,96 +1,47 @@
-import { useState } from 'react';
-import { useAppStore } from '@/lib/services/store';
-import { Schedule } from '@/lib/models';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { useEffect, useState } from 'react';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import type { ScheduleCombo } from '@/lib/services/schedulingApi';
+import { fetchScheduleCombos } from '@/lib/services/schedulingApi';
 
 const AdminSchedules = () => {
-  const { schedules, addSchedule, updateSchedule, deleteSchedule } = useAppStore();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [combos, setCombos] = useState<ScheduleCombo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const [formData, setFormData] = useState({
-    name: '',
-    timeIn: '08:00',
-    timeOut: '16:00',
-    isOvernight: false,
-  });
+  useEffect(() => {
+    setLoading(true);
+    fetchScheduleCombos()
+      .then((rows) => setCombos(rows))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error'))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const handleOpenDialog = (schedule?: Schedule) => {
-    if (schedule) {
-      setEditingSchedule(schedule);
-      setFormData({
-        name: schedule.name,
-        timeIn: schedule.timeIn,
-        timeOut: schedule.timeOut,
-        isOvernight: schedule.isOvernight,
-      });
-    } else {
-      setEditingSchedule(null);
-      setFormData({
-        name: '',
-        timeIn: '08:00',
-        timeOut: '16:00',
-        isOvernight: false,
-      });
-    }
-    setIsDialogOpen(true);
-  };
+  if (loading) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Schedules</h1>
+            <p className="text-muted-foreground">Loading schedule combinations…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (editingSchedule) {
-      updateSchedule(editingSchedule.id, formData);
-      toast({ title: 'Schedule Updated', description: `${formData.name} has been updated.` });
-    } else {
-      addSchedule(formData);
-      toast({ title: 'Schedule Added', description: `${formData.name} has been added.` });
-    }
-
-    setIsDialogOpen(false);
-  };
-
-  const handleDelete = () => {
-    if (deleteId) {
-      const sched = schedules.find((s) => s.id === deleteId);
-      deleteSchedule(deleteId);
-      toast({ title: 'Schedule Deleted', description: `${sched?.name} has been removed.` });
-      setDeleteId(null);
-    }
-  };
+  if (error) {
+    return (
+      <div className="space-y-6 animate-fade-in">
+        <div className="page-header">
+          <div>
+            <h1 className="page-title">Schedules</h1>
+            <p className="text-destructive">Error: {error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -98,12 +49,8 @@ const AdminSchedules = () => {
       <div className="page-header">
         <div>
           <h1 className="page-title">Schedules</h1>
-          <p className="text-muted-foreground">Manage work schedules</p>
+          <p className="text-muted-foreground">Available schedule combinations from MTIUsers</p>
         </div>
-        <Button onClick={() => handleOpenDialog()}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Schedule
-        </Button>
       </div>
 
       {/* Table */}
@@ -111,146 +58,34 @@ const AdminSchedules = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
+              <TableHead>Label</TableHead>
+              <TableHead>Day Type</TableHead>
               <TableHead>Time In</TableHead>
               <TableHead>Time Out</TableHead>
               <TableHead>Overnight</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead className="w-[100px]">Actions</TableHead>
+              <TableHead>Employees</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {schedules.map((schedule) => (
-              <TableRow key={schedule.id}>
-                <TableCell className="font-medium">{schedule.name}</TableCell>
-                <TableCell className="font-mono">{schedule.timeIn}</TableCell>
-                <TableCell className="font-mono">{schedule.timeOut}</TableCell>
+            {combos.map((combo, idx) => (
+              <TableRow key={`${combo.label}-${combo.dayType}-${combo.timeIn}-${combo.timeOut}-${combo.nextDay}-${idx}`}>
+                <TableCell className="font-medium">{combo.label || '—'}</TableCell>
+                <TableCell className="text-sm">{combo.dayType || '—'}</TableCell>
+                <TableCell className="font-mono">{combo.timeIn || '—'}</TableCell>
+                <TableCell className="font-mono">{combo.timeOut || '—'}</TableCell>
                 <TableCell>
-                  {schedule.isOvernight ? (
+                  {combo.nextDay ? (
                     <Badge variant="outline" className="bg-accent/10 text-accent">Yes</Badge>
                   ) : (
                     <Badge variant="outline">No</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Date(schedule.createdAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleOpenDialog(schedule)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setDeleteId(schedule.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                </TableCell>
+                <TableCell className="text-muted-foreground">{combo.count}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
-
-      {/* Add/Edit Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-md">
-          <form onSubmit={handleSubmit}>
-            <DialogHeader>
-              <DialogTitle>
-                {editingSchedule ? 'Edit Schedule' : 'Add Schedule'}
-              </DialogTitle>
-              <DialogDescription>
-                {editingSchedule
-                  ? 'Update schedule configuration'
-                  : 'Create a new work schedule'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Schedule Name</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g., Morning Shift"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="timeIn">Time In</Label>
-                  <Input
-                    id="timeIn"
-                    type="time"
-                    value={formData.timeIn}
-                    onChange={(e) => setFormData({ ...formData, timeIn: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="timeOut">Time Out</Label>
-                  <Input
-                    id="timeOut"
-                    type="time"
-                    value={formData.timeOut}
-                    onChange={(e) => setFormData({ ...formData, timeOut: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="overnight">Overnight Shift</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Enable if time out is the next day
-                  </p>
-                </div>
-                <Switch
-                  id="overnight"
-                  checked={formData.isOvernight}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, isOvernight: checked })
-                  }
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">
-                {editingSchedule ? 'Save Changes' : 'Add Schedule'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this schedule? This may affect employee assignments.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };

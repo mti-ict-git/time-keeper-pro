@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAppStore } from '@/lib/services/store';
-import { AttendanceTable } from '@/components/tables/AttendanceTable';
+import { AttendanceDBTable } from '@/components/tables/AttendanceDBTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { exportToCSV, exportToXLSX, exportToPDF } from '@/lib/services/exportService';
@@ -106,10 +106,10 @@ const AttendanceRecords = () => {
         </CardContent>
       </Card>
 
-      {/* Attendance Table */}
+      {/* Attendance Report (DB) */}
       <Card className="border-0 shadow-lg shadow-primary/5">
         <CardContent className="p-5">
-          <AttendanceTable data={attendanceRecords} />
+          <AttendanceDBTable />
         </CardContent>
       </Card>
     </div>

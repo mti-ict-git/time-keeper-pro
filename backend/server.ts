@@ -1,9 +1,11 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
-import sql, { config as SqlConfig } from "mssql";
-
-dotenv.config();
+import sql from "mssql";
+import { appPort } from "./config";
+import { getPool } from "./db";
+import { schedulingRouter } from "./routes/scheduling";
+import { usersRouter } from "./routes/users";
+import { attendanceRouter } from "./routes/attendance";
 
 type MtiUserRow = {
   employee_id: string;
@@ -43,6 +45,24 @@ type SchedulingEmployee = {
   nextDay: boolean;
 };
 
+type MtiScheduleComboRow = {
+  description: string | null;
+  day_type: string | null;
+  time_in: string | null;
+  time_out: string | null;
+  next_day: string | number | boolean | null;
+  count: number;
+};
+
+type ScheduleCombo = {
+  label: string;
+  dayType: string;
+  timeIn: string;
+  timeOut: string;
+  nextDay: boolean;
+  count: number;
+};
+
 function formatTime(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (value instanceof Date) {
@@ -60,6 +80,16 @@ function formatTime(value: unknown): string {
     return `${h}:${m}`;
   }
   return s;
+}
+
+function formatDate(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(d.getTime())) return String(value);
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function toBoolNextDay(value: string | number | boolean | null): boolean {
@@ -83,7 +113,7 @@ function mapRow(row: MtiUserRow): SchedulingEmployee {
     positionTitle: row.position_title ?? "",
     gradeInterval: row.grade_interval ?? "",
     phone: row.phone ?? "",
-    dayType: row.day_type ?? "",
+    dayType: row.description ?? "",
     description: row.description ?? "",
     timeIn: formatTime(row.time_in),
     timeOut: formatTime(row.time_out),
@@ -91,47 +121,29 @@ function mapRow(row: MtiUserRow): SchedulingEmployee {
   };
 }
 
+function mapComboRow(row: MtiScheduleComboRow): ScheduleCombo {
+  return {
+    label: row.description ?? "",
+    dayType: row.day_type ?? "",
+    timeIn: formatTime(row.time_in),
+    timeOut: formatTime(row.time_out),
+    nextDay: toBoolNextDay(row.next_day),
+    count: Number(row.count) || 0,
+  };
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/api/scheduling", schedulingRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/attendance", attendanceRouter);
 
-const dbConfig: SqlConfig = {
-  user: process.env.DB_USER as string,
-  password: process.env.DB_PASSWORD as string,
-  server: process.env.DB_SERVER as string,
-  database: process.env.DB_NAME as string,
-  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 1433,
-  options: {
-    encrypt: false,
-    trustServerCertificate: true,
-  },
-};
+ 
 
-let poolPromise: Promise<sql.ConnectionPool> | undefined;
-function getPool(): Promise<sql.ConnectionPool> {
-  if (!poolPromise) {
-    poolPromise = sql.connect(dbConfig);
-  }
-  return poolPromise!;
-}
+ 
 
-app.get("/api/scheduling/employees", async (_req: Request, res: Response) => {
-  try {
-    const pool = await getPool();
-    const result = await pool
-      .request()
-      .query(
-        "SELECT employee_id, employee_name, gender, division, department, section, supervisor_id, supervisor_name, position_title, grade_interval, phone, day_type, description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM MTIUsers"
-      );
-
-    const rows = (result.recordset ?? []) as MtiUserRow[];
-    const data: SchedulingEmployee[] = rows.map(mapRow);
-    res.json({ data });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
-  }
-});
+ 
 
 type ColumnInfo = {
   name: string;
@@ -147,12 +159,12 @@ type ColumnBindingType =
   | { kind: "length"; type: sql.ISqlTypeFactoryWithLength; length: number }
   | { kind: "precision"; type: sql.ISqlTypeFactoryWithPrecisionScale; precision: number; scale: number };
 
-async function getUsersColumns(pool: sql.ConnectionPool): Promise<ColumnInfo[]> {
-  const result = await pool
-    .request()
-    .query(
-      "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' ORDER BY ORDINAL_POSITION"
-    );
+async function getTableColumns(pool: sql.ConnectionPool, tableName: string): Promise<ColumnInfo[]> {
+  const request = pool.request();
+  request.input("tableName", sql.NVarChar, tableName);
+  const result = await request.query(
+    "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @tableName ORDER BY ORDINAL_POSITION"
+  );
   const rows = result.recordset ?? [];
   const cols: ColumnInfo[] = rows.map((r: Record<string, unknown>) => {
     const obj = r as Record<string, unknown>;
@@ -198,63 +210,9 @@ function mapBinding(ci: ColumnInfo): ColumnBindingType {
   return { kind: "length", type: sql.NVarChar, length };
 }
 
-app.get("/api/users/schema", async (_req: Request, res: Response) => {
-  try {
-    const pool = await getPool();
-    const columns = await getUsersColumns(pool);
-    res.json({ columns });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
-  }
-});
+ 
 
-app.get("/api/users", async (_req: Request, res: Response) => {
-  try {
-    const pool = await getPool();
-    const result = await pool.request().query("SELECT TOP 100 * FROM Users");
-    const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
-    res.json({ data: rows });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
-  }
-});
-
-app.get("/api/users/search", async (req: Request, res: Response) => {
-  try {
-    const field = String(req.query.field ?? "");
-    const value = String(req.query.value ?? "");
-    if (!field || !value) {
-      res.status(400).json({ error: "Missing field or value" });
-      return;
-    }
-    const pool = await getPool();
-    const cols = await getUsersColumns(pool);
-    const col = cols.find((c) => c.name === field);
-    if (!col) {
-      res.status(400).json({ error: "Invalid field" });
-      return;
-    }
-    const binding = mapBinding(col);
-    const request = pool.request();
-    let sqlType: sql.ISqlType;
-    if (binding.kind === "simple") {
-      sqlType = binding.type as unknown as sql.ISqlType;
-    } else if (binding.kind === "length") {
-      sqlType = binding.type(binding.length);
-    } else {
-      sqlType = binding.type(binding.precision, binding.scale);
-    }
-    request.input(field, sqlType, value);
-    const result = await request.query(`SELECT TOP 100 * FROM Users WHERE ${field} = @${field}`);
-    const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
-    res.json({ data: rows });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
-  }
-});
+ 
 
 app.get("/api/health", async (_req: Request, res: Response) => {
   try {
@@ -266,7 +224,5 @@ app.get("/api/health", async (_req: Request, res: Response) => {
   }
 });
 
-const port = process.env.PORT ? Number(process.env.PORT) : 5001;
-app.listen(port, () => {
-  // server started
+app.listen(appPort, () => {
 });

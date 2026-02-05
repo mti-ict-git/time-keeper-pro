@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: timekeeper-backend
+    environment:
+      - PORT=5001
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_SERVER=${DB_SERVER:-mssql}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT:-1433}
+    ports:
+      - "5001:5001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - mssql
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: timekeeper-web
+    environment:
+      - VITE_BACKEND_URL=http://backend:5001
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: timekeeper-mssql
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_PID=Express
+      - SA_PASSWORD=${SA_PASSWORD:-YourStrong!Passw0rd}
+    ports:
+      - "14333:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+
+volumes:
+  mssql-data:
+    name: timekeeper-mssql-data
