@@ -1,9 +1,16 @@
-import { ReactNode } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useTheme } from 'next-themes';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/lib/services/store';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   LayoutDashboard,
   Calendar,
@@ -18,8 +25,10 @@ import {
   ClipboardList,
   Menu,
   X,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
-import { useState } from 'react';
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -45,14 +54,57 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { auth, logout } = useAppStore();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
+
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogout = () => {
     logout();
     navigate('/dashboard');
   };
+
+  const ThemeToggle = () => (
+    mounted ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-9 w-9 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            {theme === 'dark' ? (
+              <Moon className="h-4 w-4" />
+            ) : theme === 'light' ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Monitor className="h-4 w-4" />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuItem onClick={() => setTheme('light')} className="gap-2 cursor-pointer">
+            <Sun className="h-4 w-4" />
+            Light
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTheme('dark')} className="gap-2 cursor-pointer">
+            <Moon className="h-4 w-4" />
+            Dark
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTheme('system')} className="gap-2 cursor-pointer">
+            <Monitor className="h-4 w-4" />
+            System
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : <div className="h-9 w-9" />
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -105,7 +157,10 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
             </nav>
 
             {/* Right side */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {/* Theme Toggle */}
+              <ThemeToggle />
+
               {auth.isAuthenticated ? (
                 <>
                   <Badge variant="outline" className="bg-primary/20 text-primary-foreground border-primary/30">
