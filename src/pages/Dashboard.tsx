@@ -4,7 +4,7 @@ import { useAppStore } from '@/lib/services/store';
 import { StatsCard } from '@/components/StatsCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   BarChart,
   Bar,
@@ -17,11 +17,11 @@ import {
   PieChart,
   Pie,
   Cell,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
 } from 'recharts';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
-import { FileText, Calendar, BarChart3, CheckCircle, XCircle, Clock, Users } from 'lucide-react';
+import { FileText, Calendar, BarChart3, CheckCircle, XCircle, Clock, TrendingUp } from 'lucide-react';
 
 const COLORS = {
   primary: 'hsl(221, 83%, 53%)',
@@ -35,7 +35,7 @@ const COLORS = {
 type DateRange = 'day' | 'week' | 'month' | 'quarter';
 
 const Dashboard = () => {
-  const { attendanceRecords, controllers } = useAppStore();
+  const { attendanceRecords, controllers, employees } = useAppStore();
   const [dateRange, setDateRange] = useState<DateRange>('week');
 
   // Filter records by date range
@@ -85,7 +85,7 @@ const Dashboard = () => {
     const dateMap = new Map<string, { clockIn: number; clockOut: number }>();
 
     filteredRecords.forEach((record) => {
-      const dateKey = format(new Date(record.date), 'MM/dd');
+      const dateKey = format(new Date(record.date), 'MMM dd');
       const existing = dateMap.get(dateKey) || { clockIn: 0, clockOut: 0 };
 
       if (record.actualIn) existing.clockIn++;
@@ -133,23 +133,30 @@ const Dashboard = () => {
     }));
   }, [filteredRecords, controllers]);
 
+  const validPercent = stats.total > 0 ? ((stats.valid / stats.total) * 100).toFixed(1) : 0;
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Attendance Dashboard</h1>
-          <p className="text-muted-foreground">Overview of attendance metrics and analytics</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25">
+            {employees.length > 0 ? employees[0].name.charAt(0) : 'A'}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Welcome back! 👋</h1>
+            <p className="text-muted-foreground">Check your attendance activities in this dashboard.</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Link to="/scheduling">
-            <Button variant="outline">
+            <Button variant="outline" className="rounded-xl shadow-sm">
               <Calendar className="w-4 h-4 mr-2" />
               Schedule
             </Button>
           </Link>
           <Link to="/attendance">
-            <Button>
+            <Button className="rounded-xl shadow-lg shadow-primary/25">
               <FileText className="w-4 h-4 mr-2" />
               View Attendance
             </Button>
@@ -157,95 +164,127 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Date Range Tabs */}
-      <Tabs value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
-        <TabsList>
-          <TabsTrigger value="day">Day</TabsTrigger>
-          <TabsTrigger value="week">Week</TabsTrigger>
-          <TabsTrigger value="month">Month</TabsTrigger>
-          <TabsTrigger value="quarter">Quarter</TabsTrigger>
-        </TabsList>
-      </Tabs>
-
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
           title="Total Records"
           value={stats.total}
           icon={BarChart3}
-          variant="default"
+          variant="primary"
+          trend={{ value: 10.8, isPositive: true }}
         />
         <StatsCard
           title="Clock Ins"
           value={stats.clockIns}
           icon={Clock}
           variant="info"
+          trend={{ value: 5.8, isPositive: true }}
         />
         <StatsCard
           title="Valid Records"
           value={stats.valid}
           icon={CheckCircle}
           variant="success"
+          trend={{ value: 10.8, isPositive: true }}
         />
         <StatsCard
           title="Invalid Records"
           value={stats.invalid}
           icon={XCircle}
           variant="destructive"
+          trend={{ value: 2.3, isPositive: false }}
         />
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Attendance by Date */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Attendance by Date</CardTitle>
+      {/* Date Range Tabs & Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Chart */}
+        <Card className="lg:col-span-2 border-0 shadow-lg shadow-primary/5">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-semibold">Attendance Overview</CardTitle>
+                <p className="text-sm text-muted-foreground">Clock in vs Clock out trends</p>
+              </div>
+              <Tabs value={dateRange} onValueChange={(v) => setDateRange(v as DateRange)}>
+                <TabsList className="bg-muted/50">
+                  <TabsTrigger value="day" className="text-xs">Day</TabsTrigger>
+                  <TabsTrigger value="week" className="text-xs">Week</TabsTrigger>
+                  <TabsTrigger value="month" className="text-xs">Month</TabsTrigger>
+                  <TabsTrigger value="quarter" className="text-xs">Quarter</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={attendanceByDate}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12 }} className="text-muted-foreground" />
-                  <YAxis tick={{ fontSize: 12 }} className="text-muted-foreground" />
+                <AreaChart data={attendanceByDate}>
+                  <defs>
+                    <linearGradient id="colorClockIn" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.primary} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={COLORS.primary} stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorClockOut" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={COLORS.accent} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={COLORS.accent} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" vertical={false} />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: 12 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-muted-foreground" 
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 12 }} 
+                    tickLine={false}
+                    axisLine={false}
+                    className="text-muted-foreground" 
+                  />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
+                      border: 'none',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 40px -10px rgba(0,0,0,0.2)',
                     }}
                   />
                   <Legend />
-                  <Line
+                  <Area
                     type="monotone"
                     dataKey="clockIn"
                     name="Clock In"
                     stroke={COLORS.primary}
                     strokeWidth={2}
-                    dot={{ fill: COLORS.primary }}
+                    fillOpacity={1}
+                    fill="url(#colorClockIn)"
                   />
-                  <Line
+                  <Area
                     type="monotone"
                     dataKey="clockOut"
                     name="Clock Out"
                     stroke={COLORS.accent}
                     strokeWidth={2}
-                    dot={{ fill: COLORS.accent }}
+                    fillOpacity={1}
+                    fill="url(#colorClockOut)"
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
         {/* Status Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Status Distribution</CardTitle>
+        <Card className="border-0 shadow-lg shadow-primary/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-semibold">Status Chart</CardTitle>
+            <p className="text-sm text-muted-foreground">Valid vs Invalid distribution</p>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[200px] relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -253,10 +292,9 @@ const Dashboard = () => {
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
-                    outerRadius={100}
+                    outerRadius={80}
                     paddingAngle={5}
                     dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   >
                     {statusDistribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.fill} />
@@ -265,45 +303,81 @@ const Dashboard = () => {
                   <Tooltip
                     contentStyle={{
                       backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
+                      border: 'none',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 40px -10px rgba(0,0,0,0.2)',
                     }}
                   />
-                  <Legend />
                 </PieChart>
               </ResponsiveContainer>
+              {/* Center text */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-foreground">{validPercent}%</p>
+                  <p className="text-xs text-muted-foreground">Valid</p>
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Attendance by Controller */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Attendance by Controller</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={attendanceByController} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis type="number" tick={{ fontSize: 12 }} className="text-muted-foreground" />
-                  <YAxis dataKey="controller" type="category" tick={{ fontSize: 12 }} width={100} className="text-muted-foreground" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Legend />
-                  <Bar dataKey="valid" name="Valid" fill={COLORS.success} radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="invalid" name="Invalid" fill={COLORS.destructive} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            {/* Legend */}
+            <div className="flex justify-center gap-6 mt-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-success" />
+                <span className="text-sm text-muted-foreground">Valid</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-destructive" />
+                <span className="text-sm text-muted-foreground">Invalid</span>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Attendance by Controller */}
+      <Card className="border-0 shadow-lg shadow-primary/5">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">Attendance by Controller</CardTitle>
+              <p className="text-sm text-muted-foreground">Device-wise attendance breakdown</p>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <TrendingUp className="w-4 h-4 text-success" />
+              <span className="font-medium text-success">+12.5%</span>
+              <span className="text-muted-foreground">vs last period</span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={attendanceByController} layout="vertical" barGap={8}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={true} vertical={false} />
+                <XAxis type="number" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                <YAxis 
+                  dataKey="controller" 
+                  type="category" 
+                  tick={{ fontSize: 12 }} 
+                  width={120} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    border: 'none',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.2)',
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="valid" name="Valid" fill={COLORS.success} radius={[0, 6, 6, 0]} barSize={20} />
+                <Bar dataKey="invalid" name="Invalid" fill={COLORS.destructive} radius={[0, 6, 6, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
