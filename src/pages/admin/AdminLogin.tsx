@@ -1,17 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useTheme } from 'next-themes';
 import { useAppStore } from '@/lib/services/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
-import { Shield, Lock, User, Eye, EyeOff, Clock, Users, Building2 } from 'lucide-react';
+import { Shield, Lock, User, Eye, EyeOff, Clock, Users, Building2, Sun, Moon, Monitor } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, auth } = useAppStore();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +28,11 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/admin';
+
+  // Prevent hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Redirect if already authenticated
   if (auth.isAuthenticated) {
@@ -52,10 +66,51 @@ const AdminLogin = () => {
     setIsLoading(false);
   };
 
+  const ThemeToggle = ({ className = '' }: { className?: string }) => (
+    mounted ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className={`h-10 w-10 rounded-xl ${className}`}
+          >
+            {theme === 'dark' ? (
+              <Moon className="h-5 w-5" />
+            ) : theme === 'light' ? (
+              <Sun className="h-5 w-5" />
+            ) : (
+              <Monitor className="h-5 w-5" />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-36">
+          <DropdownMenuItem onClick={() => setTheme('light')} className="gap-2 cursor-pointer">
+            <Sun className="h-4 w-4" />
+            Light
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTheme('dark')} className="gap-2 cursor-pointer">
+            <Moon className="h-4 w-4" />
+            Dark
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setTheme('system')} className="gap-2 cursor-pointer">
+            <Monitor className="h-4 w-4" />
+            System
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : null
+  );
+
   return (
     <div className="min-h-screen flex">
       {/* Left Panel - Branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary via-primary/90 to-primary/80 relative overflow-hidden">
+        {/* Theme Toggle - Desktop */}
+        <div className="absolute top-6 right-6 z-20">
+          <ThemeToggle className="bg-white/10 hover:bg-white/20 text-white border-0" />
+        </div>
+
         {/* Decorative elements */}
         <div className="absolute inset-0">
           <div className="absolute top-0 left-0 w-96 h-96 bg-white/5 rounded-full -translate-x-1/2 -translate-y-1/2" />
@@ -116,7 +171,12 @@ const AdminLogin = () => {
       </div>
       
       {/* Right Panel - Login Form */}
-      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-background">
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-12 bg-background relative">
+        {/* Theme Toggle - Mobile */}
+        <div className="absolute top-6 right-6 lg:hidden">
+          <ThemeToggle className="border border-border bg-background hover:bg-muted" />
+        </div>
+
         <div className="w-full max-w-md space-y-8">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
