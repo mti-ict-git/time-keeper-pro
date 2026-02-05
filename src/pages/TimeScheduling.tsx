@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppStore } from '@/lib/services/store';
 import { StatsCard } from '@/components/StatsCard';
-import { SchedulingTable } from '@/components/tables/SchedulingTable';
+import { SchedulingDBTable } from '@/components/tables/SchedulingDBTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, Building2 } from 'lucide-react';
@@ -135,7 +135,7 @@ const TimeScheduling = () => {
               <p className="text-sm text-muted-foreground">View and manage all employee time schedules</p>
             </div>
           </div>
-          <SchedulingTable />
+          <SchedulingDBTable />
         </CardContent>
       </Card>
     </div>
