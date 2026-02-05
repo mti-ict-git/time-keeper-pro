@@ -15,22 +15,13 @@ interface StatsCardProps {
   className?: string;
 }
 
-const variantStyles = {
-  default: 'bg-card border',
-  primary: 'bg-primary/5 border-primary/20',
-  success: 'bg-success/5 border-success/20',
-  warning: 'bg-warning/5 border-warning/20',
-  destructive: 'bg-destructive/5 border-destructive/20',
-  info: 'bg-info/5 border-info/20',
-};
-
-const iconStyles = {
-  default: 'text-muted-foreground',
-  primary: 'text-primary',
-  success: 'text-success',
-  warning: 'text-warning',
-  destructive: 'text-destructive',
-  info: 'text-info',
+const iconContainerStyles = {
+  default: 'bg-muted text-muted-foreground',
+  primary: 'bg-primary/10 text-primary',
+  success: 'bg-success/10 text-success',
+  warning: 'bg-warning/10 text-warning',
+  destructive: 'bg-destructive/10 text-destructive',
+  info: 'bg-info/10 text-info',
 };
 
 export const StatsCard = ({
@@ -43,31 +34,41 @@ export const StatsCard = ({
   className,
 }: StatsCardProps) => {
   return (
-    <Card className={cn('transition-all hover:shadow-md', variantStyles[variant], className)}>
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold tracking-tight">{value}</p>
-            {description && (
-              <p className="text-xs text-muted-foreground">{description}</p>
-            )}
-            {trend && (
-              <p
-                className={cn(
-                  'text-xs font-medium',
-                  trend.isPositive ? 'text-success' : 'text-destructive'
-                )}
-              >
-                {trend.isPositive ? '↑' : '↓'} {Math.abs(trend.value)}%
-              </p>
-            )}
-          </div>
+    <Card className={cn(
+      'border-0 shadow-lg shadow-primary/5 bg-card transition-all hover:shadow-xl hover:shadow-primary/10 hover:-translate-y-0.5',
+      className
+    )}>
+      <CardContent className="p-5">
+        <div className="flex items-start gap-4">
           {Icon && (
-            <div className={cn('p-3 rounded-lg bg-background/50', iconStyles[variant])}>
-              <Icon className="h-5 w-5" />
+            <div className={cn(
+              'shrink-0 w-12 h-12 rounded-xl flex items-center justify-center',
+              iconContainerStyles[variant]
+            )}>
+              <Icon className="h-6 w-6" />
             </div>
           )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-muted-foreground truncate">{title}</p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
+              {trend && (
+                <span
+                  className={cn(
+                    'text-xs font-semibold px-1.5 py-0.5 rounded',
+                    trend.isPositive 
+                      ? 'bg-success/10 text-success' 
+                      : 'bg-destructive/10 text-destructive'
+                  )}
+                >
+                  {trend.isPositive ? '+' : ''}{trend.value}%
+                </span>
+              )}
+            </div>
+            {description && (
+              <p className="text-xs text-muted-foreground mt-1">{description}</p>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

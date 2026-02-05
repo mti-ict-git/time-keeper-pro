@@ -4,7 +4,8 @@ import { useAppStore } from '@/lib/services/store';
 import { StatsCard } from '@/components/StatsCard';
 import { SchedulingTable } from '@/components/tables/SchedulingTable';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, FileText, Clock, CheckCircle, XCircle, Users } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, Building2 } from 'lucide-react';
 
 const TimeScheduling = () => {
   const { employees, assignments, schedules } = useAppStore();
@@ -38,20 +39,25 @@ const TimeScheduling = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">Time Scheduling</h1>
-          <p className="text-muted-foreground">Manage employee schedules and time assignments</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <Users className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Time Scheduling</h1>
+            <p className="text-muted-foreground">Manage employee schedules and time assignments</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <Link to="/dashboard">
-            <Button variant="outline">
+            <Button variant="outline" className="rounded-xl shadow-sm">
               <LayoutDashboard className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
           </Link>
           <Link to="/attendance">
-            <Button>
+            <Button className="rounded-xl shadow-lg shadow-primary/25">
               <FileText className="w-4 h-4 mr-2" />
               View Attendance
             </Button>
@@ -88,27 +94,50 @@ const TimeScheduling = () => {
       </div>
 
       {/* Organization Breakdown */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {orgBreakdown.map(({ department, count }) => (
-          <div
-            key={department}
-            className="bg-card border rounded-lg p-3 text-center"
-          >
-            <p className="text-2xl font-bold">{count}</p>
-            <p className="text-xs text-muted-foreground truncate">{department}</p>
+      <Card className="border-0 shadow-lg shadow-primary/5">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+              <Building2 className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Organization Breakdown</h3>
+              <p className="text-sm text-muted-foreground">Employees by department</p>
+            </div>
           </div>
-        ))}
-        <div className="bg-primary/10 border border-primary/20 rounded-lg p-3 text-center">
-          <p className="text-2xl font-bold text-primary">{employees.length}</p>
-          <p className="text-xs text-muted-foreground">Total Employees</p>
-        </div>
-      </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {orgBreakdown.map(({ department, count }) => (
+              <div
+                key={department}
+                className="bg-muted/50 rounded-xl p-4 text-center hover:bg-muted transition-colors"
+              >
+                <p className="text-2xl font-bold text-foreground">{count}</p>
+                <p className="text-xs text-muted-foreground truncate mt-1">{department}</p>
+              </div>
+            ))}
+            <div className="bg-primary/10 rounded-xl p-4 text-center">
+              <p className="text-2xl font-bold text-primary">{employees.length}</p>
+              <p className="text-xs text-muted-foreground mt-1">Total Employees</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Employee Schedule Table */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Employee Schedules</h2>
-        <SchedulingTable />
-      </div>
+      <Card className="border-0 shadow-lg shadow-primary/5">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Employee Schedules</h3>
+              <p className="text-sm text-muted-foreground">View and manage all employee time schedules</p>
+            </div>
+          </div>
+          <SchedulingTable />
+        </CardContent>
+      </Card>
     </div>
   );
 };
