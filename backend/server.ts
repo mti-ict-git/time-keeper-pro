@@ -147,6 +147,7 @@ app.use("/api/controllers", controllersRouter);
 app.use("/api/auth/local", authLocalRouter);
 app.use("/api/auth", authRouter);
 
+
 app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ ok: true });
 });

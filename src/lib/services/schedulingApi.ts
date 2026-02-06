@@ -17,6 +17,8 @@ export interface SchedulingEmployee {
   nextDay: boolean;
 }
 
+import { buildApiUrl } from "@/lib/config/api";
+
 export async function fetchSchedulingEmployees(params?: { description?: string; dayType?: string; timeIn?: string; timeOut?: string; nextDay?: boolean }): Promise<SchedulingEmployee[]> {
   const qs = new URLSearchParams();
   if (params?.description) qs.set("description", params.description);
@@ -24,9 +26,7 @@ export async function fetchSchedulingEmployees(params?: { description?: string; 
   if (params?.timeIn) qs.set("timeIn", params.timeIn);
   if (params?.timeOut) qs.set("timeOut", params.timeOut);
   if (typeof params?.nextDay === "boolean") qs.set("nextDay", String(params.nextDay));
-  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : "";
-  const path = "/api/scheduling/employees";
-  const url = base ? `${base}${path}${qs.toString() ? `?${qs.toString()}` : ""}` : `${path}${qs.toString() ? `?${qs.toString()}` : ""}`;
+  const url = buildApiUrl("scheduling/employees", qs);
   const res = await fetch(url, {
     headers: { "Accept": "application/json" },
   });
@@ -47,10 +47,7 @@ export interface ScheduleCombo {
 }
 
 export async function fetchScheduleCombos(): Promise<ScheduleCombo[]> {
-  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : "";
-  const path = "/api/scheduling/combos";
-  const url = base ? `${base}${path}` : path;
-  const res = await fetch(url, {
+  const res = await fetch(buildApiUrl("scheduling/combos"), {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) {

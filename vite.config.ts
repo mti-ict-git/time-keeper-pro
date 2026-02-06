@@ -10,9 +10,6 @@ export default defineConfig(({ mode }) => ({
     port: 9000,
     hmr: {
       overlay: false,
-      protocol: "wss",
-      host: "attendance.merdekabattery.com",
-      clientPort: 443,
     },
     allowedHosts: [
       "attendance.merdekabattery.com",
@@ -24,6 +21,12 @@ export default defineConfig(({ mode }) => ({
         target: `${process.env.VITE_BACKEND_URL || "http://localhost:5000"}`,
         changeOrigin: true,
         secure: false,
+      },
+      "/API": {
+        target: `${process.env.VITE_BACKEND_URL || "http://localhost:5000"}`,
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/API/, "/api"),
       },
     },
   },

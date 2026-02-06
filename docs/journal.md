@@ -627,6 +627,14 @@ Verification:
 
 - Switched backend service in docker-compose to use env_file (.env) and only override PORT=5000; containers now receive DB and LDAP settings from .env without listing each variable in compose
 
+2026-02-06 15:45:46 WITA
+
+- Reverted frontend to use relative /api paths across services and removed uppercase /API alias routes from backend; set VITE_BACKEND_URL=http://backend:5000 for web container to proxy /api internally; simplified Vite HMR to default ws
+
+2026-02-06 15:50:51 WITA
+
+- Added API base helper for frontend; services now build URLs via buildApiUrl respecting VITE_API_BASE_URL and VITE_USE_RELATIVE_API_URL; added Vite proxy rule to rewrite /API to /api; set envs in docker-compose and .env
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.

@@ -1,4 +1,5 @@
 import { Controller } from "@/lib/models";
+import { buildApiUrl } from "@/lib/config/api";
 
 export interface ControllerApiItem {
   name: string;
@@ -10,10 +11,7 @@ function toId(name: string): string {
 }
 
 export async function fetchControllers(): Promise<Controller[]> {
-  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : "";
-  const path = "/api/controllers";
-  const url = base ? `${base}${path}` : path;
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const res = await fetch(buildApiUrl("controllers"), { headers: { Accept: "application/json" } });
   if (!res.ok) {
     throw new Error(`Failed to fetch controllers: ${res.status}`);
   }
