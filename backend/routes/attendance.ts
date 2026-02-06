@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import sql from "mssql";
 import { getPool } from "../db";
 import { getTableColumns } from "../utils/introspection";
-import { formatTime, formatDate, toBoolNextDay, formatTimeWita } from "../utils/format";
+import { formatTime, formatDate, toBoolNextDay } from "../utils/format";
 
 export const attendanceRouter = Router();
 
@@ -24,6 +24,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const queryParams = req.query as Record<string, unknown>;
     const from = typeof queryParams.from === "string" ? queryParams.from : "";
     const to = typeof queryParams.to === "string" ? queryParams.to : "";
+    const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
@@ -37,8 +38,14 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       (cols.find((c) => c.dataType.toLowerCase().includes("date"))?.name ?? "");
 
     if (from && to && dateColumn) {
-      request.input("from", sql.DateTime, new Date(`${from}T00:00:00`));
-      request.input("to", sql.DateTime, new Date(`${to}T23:59:59`));
+      const isDateTimeCol = dateColumn.toLowerCase().includes("datetime");
+      if (isDateTimeCol) {
+        request.input("from", sql.DateTime, new Date(`${from}T16:00:00Z`));
+        request.input("to", sql.DateTime, new Date(`${to}T15:59:59Z`));
+      } else {
+        request.input("from", sql.DateTime, new Date(`${from}T00:00:00`));
+        request.input("to", sql.DateTime, new Date(`${to}T23:59:59`));
+      }
       conditions.push(`[${dateColumn}] BETWEEN @from AND @to`);
     }
 
@@ -54,6 +61,17 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     if (department && deptColumn) {
       request.input("department", sql.NVarChar, department);
       conditions.push(`[${deptColumn}] = @department`);
+    }
+
+    if (search) {
+      const nameCandidates = ["Name", "employee_name", "name"];
+      const nameCols = nameCandidates.filter((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+      const staffCols = empIdCandidates.filter((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+      request.input("searchLike", sql.NVarChar, `%${search}%`);
+      const likeParts: string[] = [];
+      for (const nc of nameCols) likeParts.push(`[${nc}] LIKE @searchLike`);
+      for (const sc of staffCols) likeParts.push(`RTRIM(LTRIM([${sc}])) LIKE @searchLike`);
+      if (likeParts.length) conditions.push(`(${likeParts.join(" OR ")})`);
     }
 
     const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
@@ -125,7 +143,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         if (labelFromCombo) next["schedule_label"] = labelFromCombo;
         else next["schedule_label"] = `${schedIn}-${schedOut}`;
       }
-      const actual = formatTimeWita(dtRaw);
+      const actual = formatTime(dtRaw);
       if (ev.includes("in")) {
         const existing = String(next["actual_in"] || "");
         next["actual_in"] = existing && actual ? (existing < actual ? existing : actual) : actual || existing;

@@ -38,33 +38,44 @@ export const AttendanceDBTable = () => {
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
   useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(globalFilter), 300);
+    return () => clearTimeout(handle);
+  }, [globalFilter]);
+
+  useEffect(() => {
+    const q = debouncedSearch.trim();
+    const staffPattern = /^MTI\d{6}$/;
+    const employeeIdParam = staffPattern.test(q) ? q : undefined;
+    const searchParam = q.length >= 3 && !employeeIdParam ? q : undefined;
     setLoading(true);
-    fetchAttendanceReport({ from: dateFrom || undefined, to: dateTo || undefined })
+    fetchAttendanceReport({
+      from: dateFrom || undefined,
+      to: dateTo || undefined,
+      search: searchParam,
+      employeeId: employeeIdParam,
+      department: departmentFilter !== "all" ? departmentFilter : undefined,
+      limit: searchParam || employeeIdParam ? 500 : undefined,
+    })
       .then((rows) => setData(rows))
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, debouncedSearch, departmentFilter]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["department", "dept"])))).filter(Boolean).sort(), [data]);
 
   const filteredData = useMemo(() => {
     return data.filter((row) => {
       const department = pick(row, ["department", "dept"]);
-      const name = pick(row, ["employee_name", "name"]);
-      const id = pick(row, ["employee_id", "employeeid", "emp_id", "empid"]);
       const matchesDepartment = departmentFilter === "all" || department === departmentFilter;
-      const matchesSearch =
-        globalFilter === "" ||
-        name.toLowerCase().includes(globalFilter.toLowerCase()) ||
-        id.toLowerCase().includes(globalFilter.toLowerCase());
-      return matchesDepartment && matchesSearch;
+      return matchesDepartment;
     });
-  }, [data, departmentFilter, globalFilter]);
+  }, [data, departmentFilter]);
 
   const columns: ColumnDef<AttendanceReportRow>[] = [
     {
@@ -166,9 +177,20 @@ export const AttendanceDBTable = () => {
   return (
     <div className="space-y-4">
       <div className="filter-bar rounded-t-lg">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search by name or ID…" value={globalFilter} onChange={(e) => setGlobalFilter(e.target.value)} className="pl-10" />
+        <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name or ID…"
+              value={globalFilter}
+              onChange={(e) => setGlobalFilter(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setDebouncedSearch(globalFilter);
+              }}
+              className="pl-10"
+            />
+          </div>
+          <Button onClick={() => setDebouncedSearch(globalFilter)}>Search</Button>
         </div>
 
         <div className="flex items-center gap-2">

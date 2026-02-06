@@ -41,6 +41,12 @@ async function main(): Promise<void> {
     const mode = ["record", "report", "checkcombo", "list"].includes(arg2.toLowerCase()) ? arg2.toLowerCase() : "report";
     const staffArg = mode === "record" ? (process.argv[3] ? String(process.argv[3]).trim() : "") : mode === "checkcombo" ? "" : arg2;
     const rangeArg = mode === "record" ? (process.argv[4] ? String(process.argv[4]).trim().toLowerCase() : "") : (process.argv[3] ? String(process.argv[3]).trim().toLowerCase() : "");
+    const onDateArg = (() => {
+      const raw = mode === "record" ? (process.argv[5] ? String(process.argv[5]).trim() : "") : (process.argv[4] ? String(process.argv[4]).trim() : "");
+      if (rangeArg === "on" && raw) return raw;
+      if (rangeArg.startsWith("on:")) return rangeArg.slice(3);
+      return "";
+    })();
 
     const tableName = mode === "record" ? "tblAttendanceRecord" : "tblAttendanceReport";
     if (mode === "list") {
@@ -118,6 +124,11 @@ async function main(): Promise<void> {
         request.input("from", sql.DateTime, start);
         request.input("to", sql.DateTime, end);
         query = `SELECT ${selectList} FROM ${tableName} WHERE RTRIM(LTRIM([${staffCol}])) = @staff AND [${preferDateCol}] BETWEEN @from AND @to`;
+        const extra = preferDateCol !== timeCol ? `, [${timeCol}] DESC` : "";
+        query += ` ORDER BY [${preferDateCol}] DESC${extra}`;
+      } else if (rangeArg === "on" && onDateArg) {
+        request.input("onDate", sql.DateTime, new Date(`${onDateArg}T00:00:00`));
+        query = `SELECT ${selectList} FROM ${tableName} WHERE RTRIM(LTRIM([${staffCol}])) = @staff AND CAST([${preferDateCol}] AS date) = CAST(@onDate AS date)`;
         const extra = preferDateCol !== timeCol ? `, [${timeCol}] DESC` : "";
         query += ` ORDER BY [${preferDateCol}] DESC${extra}`;
       } else {

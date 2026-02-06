@@ -97,6 +97,46 @@ Verification:
 
 - npx tsc --noEmit ran successfully
 
+2026-02-06 08:30:36 WITA
+
+- Added server-side search support to attendance API (Name/StaffNo LIKE) and wired Attendance Records page to pass search and department to API; increased limit when searching
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:15:31 WITA
+
+- Optimized front-end search with 300ms debounce and StaffNo detection (MTIxxxxxx); reduced server load and improved responsiveness
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:19:36 WITA
+
+- Added Search button and Enter-to-search behavior for Attendance Records; eliminated per-keystroke server calls for name searches while keeping instant StaffNo detection
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:23:59 WITA
+
+- Enforced WITA (UTC+8) date boundaries in backend when filtering by TrDateTime: convert day range to UTC 16:00(previous day)–15:59:59 for requested WITA range; TrDate filters remain standard
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:28:11 WITA
+
+- Reverted Actual C IN/OUT display to UTC in attendance API (using formatTime on TrDateTime); scheduled times remain unshifted
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
