@@ -619,6 +619,10 @@ Verification:
 
 - Updated docker-compose web environment to set VITE_BACKEND_URL=https://attendance.merdekabattery.com to avoid mixed content and route API via same HTTPS origin
 
+2026-02-06 15:38:03 WITA
+
+- Configured Vite HMR for HTTPS domain: set server.host=true and server.hmr { protocol: 'wss', host: 'attendance.merdekabattery.com', clientPort: 443 } to fix websocket connection when accessing dev via attendance.merdekabattery.com
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.

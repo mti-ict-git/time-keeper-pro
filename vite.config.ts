@@ -6,10 +6,13 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   server: {
-    host: "::",
+    host: true,
     port: 9000,
     hmr: {
       overlay: false,
+      protocol: "wss",
+      host: "attendance.merdekabattery.com",
+      clientPort: 443,
     },
     allowedHosts: [
       "attendance.merdekabattery.com",
