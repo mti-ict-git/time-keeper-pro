@@ -115,6 +115,7 @@ export const AttendanceTable = ({ data }: AttendanceTableProps) => {
             timeIn={row.original.scheduledIn}
             timeOut={row.original.scheduledOut}
             isOvernight={schedule?.isOvernight}
+            label={row.original.scheduleName}
           />
         );
       },

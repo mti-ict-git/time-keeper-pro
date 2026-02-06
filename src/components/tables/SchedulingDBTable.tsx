@@ -262,7 +262,7 @@ export const SchedulingDBTable = () => {
       },
       cell: ({ row }) => (
         row.original.timeIn || row.original.timeOut ? (
-          <ScheduleBadge timeIn={row.original.timeIn} timeOut={row.original.timeOut} isOvernight={row.original.nextDay} />
+          <ScheduleBadge timeIn={row.original.timeIn} timeOut={row.original.timeOut} isOvernight={row.original.nextDay} label={row.original.description} />
         ) : (
           <span className="text-muted-foreground">Not Assigned</span>
         )

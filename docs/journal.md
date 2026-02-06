@@ -17,6 +17,17 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo warnings/errors remain unrelated to changes
 
+2026-02-06 09:47:55 WITA
+
+- Computed Status IN/OUT in attendance report when DB does not provide StatusIn/StatusOut
+- Added configurable thresholds via env: STATUS_EARLY_MINUTES, STATUS_ONTIME_MINUTES, STATUS_LATE_MINUTES
+- Status derives from scheduled vs actual times; defaults: early 10, on-time 5, late 15 minutes
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
 2026-02-05 23:59:07 WITA
 
 - Updated attendance API to derive schedule_label from MTIUsers combos using ScheduledClockIn/Out and next_day
@@ -132,6 +143,56 @@ Verification:
 2026-02-06 09:28:11 WITA
 
 - Reverted Actual C IN/OUT display to UTC in attendance API (using formatTime on TrDateTime); scheduled times remain unshifted
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:47:39 WITA
+
+- Implemented unified schedule color mapping; added scheduleColors utility and updated ScheduleBadge to derive color from label/times/overnight; applied in Scheduling page and Attendance schedule column
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:48:55 WITA
+
+- Updated attendance schedule column to use Description rather than DayType; backend now prefers Description and only falls back to time-based labels when Description is missing
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:53:18 WITA
+
+- Switched ScheduleBadge to render Description when provided; Attendance and Scheduling tables now pass label to ScheduleBadge, so the UI shows descriptions instead of time ranges
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo warnings/errors remain unrelated to this change
+
+2026-02-06 09:54:33 WITA
+
+- Updated ScheduleBadge to strip leading time range from labels (e.g., "07:00–15:00 3 Shift Pagi" shows "3 Shift Pagi"); falls back to time range when no text is present
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 09:56:31 WITA
+
+- Added Employee ID (Staff No) column to Attendance Records table; shows employee_id/StaffNo from API
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo warnings/errors remain unrelated to this change
+
+2026-02-06 09:57:33 WITA
+
+- Widened Attendance Records Schedule column with a min-width to better display descriptions
 
 Verification:
 

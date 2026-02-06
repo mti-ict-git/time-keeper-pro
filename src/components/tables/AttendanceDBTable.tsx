@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar } from "lucide-react";
 import { AttendanceReportRow, fetchAttendanceReport } from "@/lib/services/attendanceApi";
 import { Badge } from "@/components/ui/badge";
+import { ScheduleBadge } from "@/components/ScheduleBadge";
 import { format as formatDate } from "date-fns";
 
 function asText(value: unknown): string {
@@ -79,6 +80,20 @@ export const AttendanceDBTable = () => {
 
   const columns: ColumnDef<AttendanceReportRow>[] = [
     {
+      id: "employeeId",
+      header: ({ column }) => (
+        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
+          Employee ID
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => (
+        <span className="font-mono text-sm">
+          {pick(row.original, ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"]) || "—"}
+        </span>
+      ),
+    },
+    {
       id: "employeeName",
       header: ({ column }) => (
         <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
@@ -103,9 +118,14 @@ export const AttendanceDBTable = () => {
       header: "Schedule",
       cell: ({ row }) => {
         const label = pick(row.original, ["schedule_label"]);
-        const v = label.toLowerCase();
-        const variant = v.includes("night") ? "destructive" : v.includes("morning") ? "success" : v.includes("afternoon") ? "info" : "secondary";
-        return label ? <Badge variant="outline" className={variant === "destructive" ? "bg-destructive/10 text-destructive" : variant === "success" ? "bg-success/10 text-success" : variant === "info" ? "bg-info/10 text-info" : "bg-muted/50"}>{label}</Badge> : <span className="text-muted-foreground">N/A</span>;
+        const ti = pick(row.original, ["scheduled_in"]);
+        const to = pick(row.original, ["scheduled_out"]);
+        if (!ti && !to && !label) return <span className="text-muted-foreground">N/A</span>;
+        return (
+          <div className="min-w-[220px]">
+            <ScheduleBadge timeIn={ti || ""} timeOut={to || ""} label={label || undefined} />
+          </div>
+        );
       },
     },
     { id: "scheduled_in", header: "C IN (Schedule)", cell: ({ row }) => <span className="font-mono text-sm">{pick(row.original, ["scheduled_in"]) || "N/A"}</span> },

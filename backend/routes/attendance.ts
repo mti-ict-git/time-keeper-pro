@@ -98,6 +98,35 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
 
     
 
+    const earlyThreshold = Number(process.env.STATUS_EARLY_MINUTES || 10);
+    const onTimeThreshold = Number(process.env.STATUS_ONTIME_MINUTES || 5);
+    const lateThreshold = Number(process.env.STATUS_LATE_MINUTES || 15);
+
+    function toMin(s: string): number {
+      const parts = s.split(":");
+      const h = Number(parts[0] || 0);
+      const m = Number(parts[1] || 0);
+      return h * 60 + m;
+    }
+
+    function computeStatus(sched: string, actual: string, isIn: boolean): string {
+      if (!actual) return "Missing";
+      if (!sched) return "";
+      const sm = toMin(sched);
+      const am = toMin(actual);
+      const diff = isIn ? sm - am : am - sm;
+      if (isIn) {
+        if (diff > earlyThreshold) return "Early";
+        if (diff >= -onTimeThreshold) return "On Time";
+        if (diff >= -lateThreshold) return "Late";
+        return "Late";
+      } else {
+        if (diff < -earlyThreshold) return "Early";
+        if (diff <= onTimeThreshold) return "On Time";
+        return "Late";
+      }
+    }
+
     const agg = new Map<string, Record<string, unknown>>();
     for (const r of rows) {
       const obj = r as Record<string, unknown>;
@@ -117,7 +146,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         department: String(dept),
         position_title: String(position),
         date: formatDate(dateRaw),
-        schedule_label: String(obj["Description"] ?? obj["DayType"] ?? obj["day_type"] ?? obj["Schedule"] ?? obj["ScheduleName"] ?? ""),
+        schedule_label: String(obj["Description"] ?? obj["Schedule"] ?? obj["ScheduleName"] ?? ""),
         scheduled_in: "",
         scheduled_out: "",
         actual_in: "",
@@ -140,8 +169,10 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         const nextDay = minO <= minI;
         const comboKey = `${schedIn}|${schedOut}|${nextDay ? 1 : 0}`;
         const labelFromCombo = comboMap.get(comboKey);
-        if (labelFromCombo) next["schedule_label"] = labelFromCombo;
-        else next["schedule_label"] = `${schedIn}-${schedOut}`;
+        if (!String(next["schedule_label"])) {
+          if (labelFromCombo) next["schedule_label"] = labelFromCombo;
+          else next["schedule_label"] = `${schedIn}-${schedOut}`;
+        }
       }
       const actual = formatTime(dtRaw);
       if (ev.includes("in")) {
@@ -149,12 +180,24 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         next["actual_in"] = existing && actual ? (existing < actual ? existing : actual) : actual || existing;
         const ctrl = String(obj["TrController"] ?? obj["controller_name"] ?? obj["Controller"] ?? "");
         if (ctrl) next["controller_in"] = ctrl;
+        const s = String(next["status_in"] || "");
+        if (!s) {
+          const si = String(next["scheduled_in"] || "");
+          const ai = String(next["actual_in"] || "");
+          next["status_in"] = computeStatus(si, ai, true);
+        }
       }
       if (ev.includes("out")) {
         const existing = String(next["actual_out"] || "");
         next["actual_out"] = existing && actual ? (existing > actual ? existing : actual) : actual || existing;
         const ctrl = String(obj["TrController"] ?? obj["controller_name"] ?? obj["Controller"] ?? "");
         if (ctrl) next["controller_out"] = ctrl;
+        const s = String(next["status_out"] || "");
+        if (!s) {
+          const so = String(next["scheduled_out"] || "");
+          const ao = String(next["actual_out"] || "");
+          next["status_out"] = computeStatus(so, ao, false);
+        }
       }
       agg.set(key, next);
     }

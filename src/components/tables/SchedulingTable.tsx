@@ -123,6 +123,7 @@ export const SchedulingTable = () => {
             timeIn={schedule.timeIn}
             timeOut={schedule.timeOut}
             isOvernight={schedule.isOvernight}
+            label={schedule.name}
           />
         );
       },
