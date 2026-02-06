@@ -17,7 +17,9 @@ export async function fetchAttendanceReport(params?: AttendanceQuery): Promise<A
   if (params?.search) qs.set("search", params.search);
   if (params?.department) qs.set("department", params.department);
   if (params?.limit) qs.set("limit", String(params.limit));
-  const url = qs.toString() ? `/api/attendance/report?${qs.toString()}` : "/api/attendance/report";
+  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : "";
+  const path = "/api/attendance/report";
+  const url = base ? `${base}${path}${qs.toString() ? `?${qs.toString()}` : ""}` : `${path}${qs.toString() ? `?${qs.toString()}` : ""}`;
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) {
     throw new Error(`Failed to fetch attendance report: ${res.status}`);

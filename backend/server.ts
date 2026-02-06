@@ -147,6 +147,22 @@ app.use("/api/controllers", controllersRouter);
 app.use("/api/auth/local", authLocalRouter);
 app.use("/api/auth", authRouter);
 
+app.get("/api/health", (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
+
+app.get("/api/health/db", async (_req: Request, res: Response) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().query("SELECT TOP 1 1 AS ok");
+    const v = Number((r.recordset?.[0] as { ok?: unknown } | undefined)?.ok || 0) === 1;
+    res.json({ ok: v });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
  
 
  

@@ -21,20 +21,29 @@ export interface SyncLog {
 }
 
 export async function fetchSyncStatus(): Promise<SyncStatus> {
-  const res = await fetch('/api/sync/status', { headers: { Accept: 'application/json' } });
+  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : '';
+  const path = '/api/sync/status';
+  const url = base ? `${base}${path}` : path;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Failed to fetch sync status: ${res.status}`);
   return (await res.json()) as SyncStatus;
 }
 
 export async function runSync(): Promise<SyncLog | null> {
-  const res = await fetch('/api/sync/run', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : '';
+  const path = '/api/sync/run';
+  const url = base ? `${base}${path}` : path;
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
   if (!res.ok) throw new Error(`Failed to run sync: ${res.status}`);
   const json = (await res.json()) as { lastRun: SyncLog | null };
   return json.lastRun ?? null;
 }
 
 export async function updateSyncConfig(intervalMinutes: number, enabled: boolean): Promise<{ intervalMinutes: number; enabled: boolean; nextRunAt: string | null }> {
-  const res = await fetch('/api/sync/config', {
+  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : '';
+  const path = '/api/sync/config';
+  const url = base ? `${base}${path}` : path;
+  const res = await fetch(url, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ intervalMinutes, enabled }),
@@ -44,7 +53,10 @@ export async function updateSyncConfig(intervalMinutes: number, enabled: boolean
 }
 
 export async function fetchSyncLogs(): Promise<SyncLog[]> {
-  const res = await fetch('/api/sync/logs', { headers: { Accept: 'application/json' } });
+  const base = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.length ? import.meta.env.VITE_BACKEND_URL : '';
+  const path = '/api/sync/logs';
+  const url = base ? `${base}${path}` : path;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Failed to fetch sync logs: ${res.status}`);
   const json = (await res.json()) as { logs: SyncLog[] };
   return json.logs ?? [];

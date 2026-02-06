@@ -15,7 +15,17 @@ Modularized backend structure and routes.
 Verification:
 
 - npx tsc --noEmit ran successfully
-- npm run lint executed; existing repo warnings/errors remain unrelated to changes
+ npm run lint executed; existing repo warnings/errors remain unrelated to changes
+
+Fri Feb  6 14:06:53 WITA 2026
+
+- Replaced Lovable brand mentions with MTI Attendance System in index.html meta tags and README
+- Preserved external URLs and dev dependencies referencing lovable.dev (non-brand operational references)
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
 
 2026-02-06 11:05:04 WITA
 
@@ -273,6 +283,17 @@ Verification:
 - Added per-column filter buttons to Attendance report table headers
 - Implemented client-side column filtering for Name, Employee ID, Department, Position, Date, Schedule, C IN/OUT, Actual IN/OUT, Controller, Status
 - Verified UI launch via Vite dev server
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors
+
+2026-02-06 13:44:39 WITA
+
+- Converted header filters to searchable dropdowns
+- Each column now provides unique value options with search field and "All" reset
+- Applied to Name, Employee ID, Department, Position, Date, Schedule, C IN/OUT, Actual IN/OUT, Controller, Status
 
 Verification:
 
@@ -542,6 +563,54 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint ran without errors
 
+2026-02-06 13:47:09 WITA
+
+- Fixed Vite proxy target to not depend on PORT env; it now defaults to http://localhost:5000 when VITE_BACKEND_URL is not set, preventing 403 from misrouted proxies
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
+
+2026-02-06 13:49:02 WITA
+
+- Added /api/health and /api/health/db endpoints to verify backend and DB connectivity, to help diagnose 403 issues
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
+
+2026-02-06 14:04:24 WITA
+
+- Updated attendanceApi to use absolute backend URL when VITE_BACKEND_URL is set, bypassing dev proxy to eliminate 403 from misrouted requests
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
+
+2026-02-06 14:06:52 WITA
+
+- Diagnosed backend port conflict on 5000 using lsof; found process "ControlCe" (PID 501) bound to TCP *:5000
+- Prepared remediation steps to free port 5000 for backend dev server
+
+2026-02-06 14:08:59 WITA
+
+- Terminated conflicting process and verified it respawns; switched local dev backend to PORT=5001 and validated /api/health responds 200
+
+2026-02-06 14:12:08 WITA
+
+- Updated schedulingApi, usersApi, controllersApi, and syncApi to honor VITE_BACKEND_URL and build absolute URLs; this bypasses Vite proxy and prevents 403 from misrouted dev proxy targeting port 5000
+
+2026-02-06 14:16:01 WITA
+
+- Set VITE_BACKEND_URL=http://localhost:5001 in .env for local dev to direct frontend API calls to the backend on port 5001 and avoid macOS service on 5000
+
+2026-02-06 14:24:07 WITA
+
+- Ensured .env is excluded from git via .gitignore rule and removed from git index (git rm --cached .env); verified ignore with git check-ignore
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
@@ -556,3 +625,13 @@ Verification:
 
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo warnings/errors remain unrelated to changes
+
+Fri Feb  6 14:10:18 WITA 2026
+
+- Replaced Open Graph and Twitter image URLs from lovable.dev to local /placeholder.svg
+- Ensures no external Lovable branding remains in social metadata
+
+Verification:
+
+- npx tsc --noEmit executed successfully
+- npm run lint executed successfully

@@ -45,6 +45,7 @@ export const AttendanceDBTable = () => {
   const [dateTo, setDateTo] = useState<string>("");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
+  const [filterSearch, setFilterSearch] = useState<string>("");
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(globalFilter), 300);
@@ -117,6 +118,63 @@ export const AttendanceDBTable = () => {
     });
   }, [data, departmentFilter, columnFilters]);
 
+  const optionsMap = useMemo(() => {
+    const setFor = (key: string): Set<string> => new Set<string>();
+    const opts: Record<string, Set<string>> = {
+      employeeId: setFor("employeeId"),
+      employeeName: setFor("employeeName"),
+      department: setFor("department"),
+      position: setFor("position"),
+      date: setFor("date"),
+      schedule: setFor("schedule"),
+      scheduled_in: setFor("scheduled_in"),
+      scheduled_out: setFor("scheduled_out"),
+      actual_in: setFor("actual_in"),
+      actual_out: setFor("actual_out"),
+      controller: setFor("controller"),
+      status: setFor("status"),
+    };
+    const add = (k: keyof typeof opts, v: string) => {
+      const val = v.trim();
+      if (val.length) opts[k].add(val);
+    };
+    for (const r of data) {
+      add("employeeId", pick(r, ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"]));
+      add("employeeName", pick(r, ["employee_name", "name"]));
+      add("department", pick(r, ["department", "dept"]));
+      add("position", pick(r, ["position_title", "position", "Title"]));
+      add("date", pick(r, ["date", "attendance_date", "record_date"]));
+      add("schedule", pick(r, ["schedule_label"]));
+      add("scheduled_in", pick(r, ["scheduled_in"]));
+      add("scheduled_out", pick(r, ["scheduled_out"]));
+      add("actual_in", pick(r, ["actual_in"]));
+      add("actual_out", pick(r, ["actual_out"]));
+      const ci = pick(r, ["controller_in"]);
+      const co = pick(r, ["controller_out"]);
+      add("controller", ci);
+      add("controller", co);
+      const si = pick(r, ["status_in", "statusin"]);
+      const so = pick(r, ["status_out", "statusout"]);
+      add("status", si);
+      add("status", so);
+    }
+    const toSorted = (s: Set<string>): string[] => Array.from(s).sort((a, b) => a.localeCompare(b));
+    return {
+      employeeId: toSorted(opts.employeeId),
+      employeeName: toSorted(opts.employeeName),
+      department: toSorted(opts.department),
+      position: toSorted(opts.position),
+      date: toSorted(opts.date),
+      schedule: toSorted(opts.schedule),
+      scheduled_in: toSorted(opts.scheduled_in),
+      scheduled_out: toSorted(opts.scheduled_out),
+      actual_in: toSorted(opts.actual_in),
+      actual_out: toSorted(opts.actual_out),
+      controller: toSorted(opts.controller),
+      status: toSorted(opts.status),
+    } as Record<string, string[]>;
+  }, [data]);
+
   const columns: ColumnDef<AttendanceReportRow>[] = [
     {
       id: "employeeId",
@@ -130,11 +188,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "employeeId" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["employeeId"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, employeeId: e.target.value }))} placeholder="Filter Employee ID" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, employeeId: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Employee ID" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, employeeId: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["employeeId"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, employeeId: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
@@ -158,11 +218,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "employeeName" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["employeeName"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, employeeName: e.target.value }))} placeholder="Filter Name" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, employeeName: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Name" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, employeeName: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["employeeName"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, employeeName: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
@@ -177,11 +239,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "department" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["department"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, department: e.target.value }))} placeholder="Filter Department" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, department: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Department" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, department: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["department"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, department: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -194,11 +258,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "position" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["position"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, position: e.target.value }))} placeholder="Filter Position" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, position: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Position" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, position: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["position"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, position: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -213,11 +279,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "date" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["date"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, date: e.target.value }))} placeholder="Filter Date (YYYY-MM-DD)" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, date: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Date" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, date: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["date"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, date: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
@@ -237,11 +305,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "schedule" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["schedule"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, schedule: e.target.value }))} placeholder="Filter Schedule label" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, schedule: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Schedule" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, schedule: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["schedule"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, schedule: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
@@ -266,11 +336,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "scheduled_in" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["scheduled_in"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, scheduled_in: e.target.value }))} placeholder="Filter C IN" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_in: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search C IN" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_in: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["scheduled_in"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_in: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -283,11 +355,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "scheduled_out" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["scheduled_out"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, scheduled_out: e.target.value }))} placeholder="Filter C OUT" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_out: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search C OUT" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_out: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["scheduled_out"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_out: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -300,11 +374,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "actual_in" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["actual_in"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, actual_in: e.target.value }))} placeholder="Filter Actual IN" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, actual_in: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Actual IN" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, actual_in: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["actual_in"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, actual_in: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -317,11 +393,13 @@ export const AttendanceDBTable = () => {
           <Filter className="h-3 w-3" />
         </Button>
         {openFilterId === "actual_out" && (
-          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-            <Input value={columnFilters["actual_out"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, actual_out: e.target.value }))} placeholder="Filter Actual OUT" />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, actual_out: "" })); setOpenFilterId(null); }}>Clear</Button>
-              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+            <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Actual OUT" />
+            <div className="mt-2 max-h-48 overflow-auto">
+              <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, actual_out: "" })); setOpenFilterId(null); }}>All</button>
+              {(optionsMap["actual_out"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, actual_out: o })); setOpenFilterId(null); }}>{o}</button>
+              ))}
             </div>
           </div>
         )}
@@ -336,11 +414,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "controller" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["controller"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, controller: e.target.value }))} placeholder="Filter Controller" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, controller: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Controller" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, controller: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["controller"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, controller: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
@@ -370,11 +450,13 @@ export const AttendanceDBTable = () => {
             <Filter className="h-3 w-3" />
           </Button>
           {openFilterId === "status" && (
-            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
-              <Input value={columnFilters["status"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, status: e.target.value }))} placeholder="Filter Status" />
-              <div className="mt-2 flex justify-end gap-2">
-                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, status: "" })); setOpenFilterId(null); }}>Clear</Button>
-                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+              <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Status" />
+              <div className="mt-2 max-h-48 overflow-auto">
+                <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, status: "" })); setOpenFilterId(null); }}>All</button>
+                {(optionsMap["status"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                  <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, status: o })); setOpenFilterId(null); }}>{o}</button>
+                ))}
               </div>
             </div>
           )}
