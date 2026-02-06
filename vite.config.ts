@@ -11,6 +11,11 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    allowedHosts: [
+      "attendance.merdekabattery.com",
+      "localhost",
+      "127.0.0.1",
+    ],
     proxy: {
       "/api": {
         target: `${process.env.VITE_BACKEND_URL || "http://localhost:5000"}`,

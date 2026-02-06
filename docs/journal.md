@@ -611,6 +611,10 @@ Verification:
 
 - Ensured .env is excluded from git via .gitignore rule and removed from git index (git rm --cached .env); verified ignore with git check-ignore
 
+2026-02-06 15:33:21 WITA
+
+- Allowed host attendance.merdekabattery.com in Vite dev server via server.allowedHosts to fix 403 “Blocked request” when accessing frontend through that domain
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
