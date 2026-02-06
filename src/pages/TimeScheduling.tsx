@@ -1,6 +1,6 @@
-import { useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { useAppStore } from '@/lib/services/store';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { fetchSchedulingEmployees, SchedulingEmployee } from '@/lib/services/schedulingApi';
 import { StatsCard } from '@/components/StatsCard';
 import { SchedulingDBTable } from '@/components/tables/SchedulingDBTable';
 import { Button } from '@/components/ui/button';
@@ -8,32 +8,46 @@ import { Card, CardContent } from '@/components/ui/card';
 import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, Building2 } from 'lucide-react';
 
 const TimeScheduling = () => {
-  const { employees, assignments, schedules } = useAppStore();
+  const [employees, setEmployees] = useState<SchedulingEmployee[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
+
+  const location = useLocation();
+  useEffect(() => {
+    setLoading(true);
+    const qs = new URLSearchParams(location.search);
+    const description = qs.get("description") || undefined;
+    const timeIn = qs.get("timeIn") || undefined;
+    const timeOut = qs.get("timeOut") || undefined;
+    const nextDayParam = qs.get("nextDay");
+    const nextDay = nextDayParam === null ? undefined : nextDayParam === "true" || nextDayParam === "1";
+    fetchSchedulingEmployees({ description, timeIn, timeOut, nextDay })
+      .then((rows) => setEmployees(rows))
+      .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
+      .finally(() => setLoading(false));
+  }, [location.search]);
 
   // Calculate stats
   const stats = useMemo(() => {
     const totalEmployees = employees.length;
-    const assignedEmployees = assignments.filter((a) => {
-      const hasSchedule = schedules.some((s) => s.id === a.scheduleId);
-      return hasSchedule;
-    }).length;
-
-    const timeInAvailable = assignedEmployees;
-    const timeInNA = totalEmployees - assignedEmployees;
-    const timeOutAvailable = assignedEmployees;
-    const timeOutNA = totalEmployees - assignedEmployees;
-
+    const timeInAvailable = employees.filter((e) => e.timeIn && e.timeIn.length > 0).length;
+    const timeOutAvailable = employees.filter((e) => e.timeOut && e.timeOut.length > 0).length;
+    const timeInNA = totalEmployees - timeInAvailable;
+    const timeOutNA = totalEmployees - timeOutAvailable;
     return { timeInAvailable, timeInNA, timeOutAvailable, timeOutNA };
-  }, [employees, assignments, schedules]);
+  }, [employees]);
 
   // Organization breakdown
   const orgBreakdown = useMemo(() => {
     const deptMap = new Map<string, number>();
     employees.forEach((emp) => {
-      const count = deptMap.get(emp.department) || 0;
-      deptMap.set(emp.department, count + 1);
+      const key = emp.department || "";
+      const count = deptMap.get(key) || 0;
+      deptMap.set(key, count + 1);
     });
-    return Array.from(deptMap.entries()).map(([dept, count]) => ({ department: dept, count }));
+    return Array.from(deptMap.entries())
+      .filter(([dept]) => dept && dept.length > 0)
+      .map(([dept, count]) => ({ department: dept, count }));
   }, [employees]);
 
   return (
@@ -66,6 +80,12 @@ const TimeScheduling = () => {
       </div>
 
       {/* Stats Cards */}
+      {loading && (
+        <div className="p-4 text-muted-foreground">Loading scheduling overview…</div>
+      )}
+      {error && (
+        <div className="p-4 text-destructive">Error: {error}</div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard
           title="Time In Available"

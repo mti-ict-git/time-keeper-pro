@@ -7,6 +7,9 @@ import { schedulingRouter } from "./routes/scheduling";
 import { usersRouter } from "./routes/users";
 import { attendanceRouter } from "./routes/attendance";
 import { syncRouter } from "./routes/sync";
+import { authRouter } from "./routes/auth";
+import { controllersRouter } from "./routes/controllers";
+import { authLocalRouter } from "./routes/auth_local";
 
 type MtiUserRow = {
   employee_id: string;
@@ -140,6 +143,9 @@ app.use("/api/scheduling", schedulingRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/sync", syncRouter);
+app.use("/api/controllers", controllersRouter);
+app.use("/api/auth/local", authLocalRouter);
+app.use("/api/auth", authRouter);
 
  
 

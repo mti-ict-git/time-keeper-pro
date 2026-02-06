@@ -7,3 +7,4 @@ export { default as AdminAssignments } from './AdminAssignments';
 export { default as AdminRules } from './AdminRules';
 export { default as AdminAuditLog } from './AdminAuditLog';
 export { default as AdminSync } from './AdminSync';
+export { default as AdminUsers } from './AdminUsers';

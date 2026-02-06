@@ -5,7 +5,8 @@ let poolPromise: Promise<sql.ConnectionPool> | undefined;
 
 export function getPool(): Promise<sql.ConnectionPool> {
   if (!poolPromise) {
-    poolPromise = sql.connect(dbConfig);
+    const pool = new sql.ConnectionPool(dbConfig);
+    poolPromise = pool.connect();
   }
   return poolPromise as Promise<sql.ConnectionPool>;
 }

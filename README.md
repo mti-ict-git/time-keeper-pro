@@ -71,3 +71,10 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Features
+
+- Admin Controllers uses real data from backend (/api/controllers) aggregated from attendance records; UI is read-only when sourced from server
+- Time Scheduling uses real data from backend (/api/scheduling/employees) for stats and organization breakdown
+- In Admin Schedules, clicking Employees opens a filtered list of users
+- Employees count opens a modal with filtered users and CSV export

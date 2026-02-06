@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { useAppStore } from '@/lib/services/store';
+import { useEffect, useState } from 'react';
 import { Controller } from '@/lib/models';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,6 +39,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { fetchControllers } from '@/lib/services/controllersApi';
 
 const statusColors = {
   active: 'bg-success/10 text-success border-success/20',
@@ -48,7 +48,18 @@ const statusColors = {
 };
 
 const AdminControllers = () => {
-  const { controllers, addController, updateController, deleteController } = useAppStore();
+  const [controllers, setControllers] = useState<Controller[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    fetchControllers()
+      .then((data) => setControllers(data))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error'))
+      .finally(() => setLoading(false));
+  }, []);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingController, setEditingController] = useState<Controller | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -60,48 +71,19 @@ const AdminControllers = () => {
     status: 'active' as 'active' | 'inactive' | 'maintenance',
   });
 
-  const handleOpenDialog = (controller?: Controller) => {
-    if (controller) {
-      setEditingController(controller);
-      setFormData({
-        name: controller.name,
-        location: controller.location,
-        ipAddress: controller.ipAddress,
-        status: controller.status,
-      });
-    } else {
-      setEditingController(null);
-      setFormData({
-        name: '',
-        location: '',
-        ipAddress: '',
-        status: 'active',
-      });
-    }
-    setIsDialogOpen(true);
+  const handleOpenDialog = () => {
+    toast({ title: 'Read-only', description: 'Controllers are sourced from attendance data.' });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (editingController) {
-      updateController(editingController.id, formData);
-      toast({ title: 'Controller Updated', description: `${formData.name} has been updated.` });
-    } else {
-      addController(formData);
-      toast({ title: 'Controller Added', description: `${formData.name} has been added.` });
-    }
-
+    toast({ title: 'Read-only', description: 'Editing controllers is not available for real data.' });
     setIsDialogOpen(false);
   };
 
   const handleDelete = () => {
-    if (deleteId) {
-      const ctrl = controllers.find((c) => c.id === deleteId);
-      deleteController(deleteId);
-      toast({ title: 'Controller Deleted', description: `${ctrl?.name} has been removed.` });
-      setDeleteId(null);
-    }
+    toast({ title: 'Read-only', description: 'Deleting controllers is not available for real data.' });
+    setDeleteId(null);
   };
 
   return (
@@ -132,7 +114,19 @@ const AdminControllers = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {controllers.map((controller) => (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground">Loading controllers…</TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-destructive">Error: {error}</TableCell>
+              </TableRow>
+            ) : controllers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center text-muted-foreground">No controllers found</TableCell>
+              </TableRow>
+            ) : controllers.map((controller) => (
               <TableRow key={controller.id}>
                 <TableCell className="font-medium">{controller.name}</TableCell>
                 <TableCell>{controller.location}</TableCell>
@@ -150,7 +144,8 @@ const AdminControllers = () => {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => handleOpenDialog(controller)}
+                      onClick={handleOpenDialog}
+                      disabled
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -158,6 +153,7 @@ const AdminControllers = () => {
                       variant="ghost"
                       size="icon"
                       onClick={() => setDeleteId(controller.id)}
+                      disabled
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>

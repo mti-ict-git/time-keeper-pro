@@ -17,6 +17,118 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo warnings/errors remain unrelated to changes
 
+2026-02-06 11:05:04 WITA
+
+- Filtered /api/controllers to only include face print devices by default
+- Added configurable filters via env: CONTROLLER_INCLUDE, CONTROLLER_EXCLUDE (comma-separated)
+- Admin Controllers page now shows face print devices only
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:17:43 WITA
+
+- Enhanced /api/controllers filter patterns: supports prefix (^), suffix ($), regex: tokens
+- Default includes now use ^FR- and trial to match provided Face Device naming
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:20:55 WITA
+
+- Updated Time Scheduling page to use real scheduling employees from /api/scheduling/employees
+- Stats (Time In/Out Available/N/A) computed from real timeIn/timeOut presence
+- Organization breakdown computed from real department data; total equals fetched employees
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:28:35 WITA
+
+- Admin Schedules: Employees count links to Time Scheduling with filters
+- Backend /api/scheduling/employees supports description, timeIn, timeOut, nextDay
+- Time Scheduling reads URL filters for overview and table
+- Scheduling table filters by timeIn/timeOut/nextDay and description
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:30:40 WITA
+
+- Fixed Admin Schedules link path to /scheduling to avoid 404
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:33:28 WITA
+
+- Replaced navigation with modal for Employees in Admin Schedules
+- Modal loads filtered users via /api/scheduling/employees and supports CSV export
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:38:39 WITA
+
+- Fixed duplicate import causing 'Identifier useEffect has already been declared' in AdminSchedules.tsx
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:39:54 WITA
+
+- Hardened /api/scheduling/employees nextDay filter using CAST and string set
+- Prevented SQL conversion errors when next_day stored as text (e.g., 'Y'/'N')
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:40:57 WITA
+
+- Made employees modal scrollable (bounded height with overflow)
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
+2026-02-06 11:43:58 WITA
+
+- Fixed mismatch: employees modal now filters by day_type too
+- Ensures modal list count equals the combo count for selected row
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+2026-02-06 10:52:33 WITA
+
+- Added backend/controllers route [/api/controllers] to aggregate controller names from tblAttendanceReport
+- Mounted /api/controllers in backend/server.ts
+- Implemented src/lib/services/controllersApi.ts to fetch real controllers
+- Updated Admin Controllers page to load real data and set actions as read-only
+
+Verification:
+
+- npm run lint executed successfully
+- npx tsc --noEmit executed successfully
+
 2026-02-06 10:11:52 WITA
 
 - Added backend sync feature: Orange DB → EmployeeWorkflow MTIUsers
@@ -76,6 +188,96 @@ Verification:
 
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:35:41 WITA
+
+- Added Orange DB inspector script [backend/scripts/check_orange.ts]; verifies object kind across sys.tables/views/synonyms
+- Added Orange query test script [backend/scripts/test_orange_query.ts]; confirmed sample rows with CROSS APPLY
+- Qualified Orange objects with database name in backend sync query to avoid default DB mismatch
+
+Verification:
+
+- npx tsx backend/scripts/check_orange.ts it_mti_employee_database_tbl dbo → kind=view
+- npx tsx backend/scripts/test_orange_query.ts → ok, sampleCount=5
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:38:20 WITA
+
+- Reverted backend Orange query to two-part names ([dbo].[it_mti_employee_database_tbl])
+- Rationale: avoid cross-database name qualification mismatch causing “Invalid object name”
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:46:06 WITA
+
+- Implemented retry-until-success scheduler with exponential backoff
+- Backoff settings via env: SYNC_RETRY_BASE_MS (default 30000), SYNC_RETRY_MAX_MS (default 300000)
+- Status endpoint now includes retrying and retryCount; Admin UI shows "Retrying (Attempt N)"
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:52:39 WITA
+
+- Tested backend sync end-to-end via run_sync_once script
+- Fixed mssql connection pooling to use separate ConnectionPool for Orange and Target DBs
+- Qualified target table explicitly as [dbo].[MTIUsers]
+- Sync run succeeded: total=1009, updated=4, inserted=0, unchanged=1005
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors (7 existing warnings)
+
+2026-02-06 11:05:28 WITA
+
+- Diagnosed repeated updates: hash mismatch due to phone length truncation
+- Added debug script to compare Orange vs target values [backend/scripts/debug_hash_diffs.ts]
+- Fixed sync hashing to use trimmed phone before hashing
+- Validated sync run: now updated=0, inserted=0, unchanged=1009
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors
+
+2026-02-06 13:25:46 WITA
+
+- Added DataDBEnt connection module [backend/dataDb.ts]
+- Created CardDB test script to fetch CardNo/AccessLevel/Name/StaffNo [backend/scripts/test_carddb.ts]
+- Verified data retrieval using DATADB_* env from .env
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors
+
+2026-02-06 13:34:19 WITA
+
+- Implemented DataDBEnt → MTIUsers enrichment for CardDB fields (CardNo, AccessLevel, Name, FirstName, LastName, StaffNo)
+- Added script with Del_State filter: ISNULL(Del_State,0)=0 [backend/scripts/sync_carddb_to_mtiusers.ts]
+- Populated MTIUsers for matched employees; sample run updated 1263 rows
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors
+
+2026-02-06 13:40:05 WITA
+
+- Added per-column filter buttons to Attendance report table headers
+- Implemented client-side column filtering for Name, Employee ID, Department, Position, Date, Schedule, C IN/OUT, Actual IN/OUT, Controller, Status
+- Verified UI launch via Vite dev server
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors
 
 2026-02-06 09:47:55 WITA
 
@@ -289,6 +491,47 @@ Verification:
 Verification:
 
 - npx tsc --noEmit ran successfully
+
+2026-02-06 10:46:04 WITA
+
+- Removed Assignments entry from Admin navigation and Admin Overview quick links, as assignments are handled by another system
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:53:52 WITA
+
+- Added Admin Users page and navigation item; lists Users from backend /api/users with search
+- Implemented LDAP authentication via backend /api/auth/login using ldapts and wired AdminLogin to call it
+
+Verification:
+
+- Installed ldapts
+- npx tsc --noEmit ran successfully
+
+2026-02-06 13:08:38 WITA
+
+- Added local login endpoint using Users table at /api/auth/local/login
+- Added AD search and import endpoints under /api/users/ad/search and /api/users/ad/import
+- Updated AdminLogin to include method toggle (Active Directory vs Local)
+- Updated User Management to add Local and AD users with a dialog
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
+
+2026-02-06 13:41:35 WITA
+
+- Updated Docker configuration to use ports 9000 (frontend) and 5000 (backend)
+- Changed Vite dev server port to 9000 and backend default port to 5000
+- Updated compose environment VITE_BACKEND_URL to point to backend:5000
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
 
 2026-02-05 23:28:55 WITA
 

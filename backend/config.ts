@@ -15,4 +15,4 @@ export const dbConfig: SqlConfig = {
   },
 };
 
-export const appPort = process.env.PORT ? Number(process.env.PORT) : 5001;
+export const appPort = process.env.PORT ? Number(process.env.PORT) : 5000;

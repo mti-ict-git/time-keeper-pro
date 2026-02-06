@@ -17,7 +17,6 @@ const AdminOverview = () => {
     { path: '/admin/employees', label: 'Manage Employees', icon: Users, count: employees.length, color: 'bg-primary/10 text-primary' },
     { path: '/admin/schedules', label: 'Manage Schedules', icon: Clock, count: schedules.length, color: 'bg-info/10 text-info' },
     { path: '/admin/controllers', label: 'Manage Controllers', icon: Cpu, count: controllers.length, color: 'bg-accent/10 text-accent' },
-    { path: '/admin/assignments', label: 'Manage Assignments', icon: ClipboardList, count: assignments.length, color: 'bg-success/10 text-success' },
     { path: '/admin/rules', label: 'Attendance Rules', icon: Settings, color: 'bg-warning/10 text-warning' },
     { path: '/admin/audit', label: 'Audit Log', icon: Activity, count: auditLogs.length, color: 'bg-destructive/10 text-destructive' },
   ];

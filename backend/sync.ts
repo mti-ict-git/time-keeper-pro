@@ -50,7 +50,7 @@ function hashRow(row: OrangeRow): string {
 
 async function getPhoneMaxLength(target: sql.ConnectionPool): Promise<number> {
   const res = await target.request().query(
-    "SELECT CHARACTER_MAXIMUM_LENGTH AS len FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'MTIUsers' AND COLUMN_NAME = 'phone'"
+    "SELECT CHARACTER_MAXIMUM_LENGTH AS len FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = 'MTIUsers' AND COLUMN_NAME = 'phone'"
   );
   const row = res.recordset?.[0] as { len?: unknown } | undefined;
   const v = row?.len;
@@ -60,7 +60,7 @@ async function getPhoneMaxLength(target: sql.ConnectionPool): Promise<number> {
 
 async function getExistingHashes(target: sql.ConnectionPool): Promise<Record<string, string>> {
   const res = await target.request().query(
-    "SELECT employee_id, employee_name, gender, division, department, section, supervisor_id, supervisor_name, position_title, grade_interval, phone, day_type, description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM MTIUsers"
+    "SELECT employee_id, employee_name, gender, division, department, section, supervisor_id, supervisor_name, position_title, grade_interval, phone, day_type, description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM [dbo].[MTIUsers]"
   );
   const map: Record<string, string> = {};
   const rows = (res.recordset ?? []) as Array<Record<string, unknown>>;
@@ -187,12 +187,12 @@ export async function runScheduleSync(): Promise<SyncResult> {
         phone = phone.slice(0, phoneMax);
       }
 
-      const newHash = hashRow(row);
+      const newHash = hashRow({ ...row, phone });
       const oldHash = existingHashes[row.employee_id];
 
       const req = tx.request();
       req.input("employee_id", sql.NVarChar, row.employee_id);
-      const existsRes = await req.query("SELECT COUNT(1) AS c FROM MTIUsers WHERE employee_id = @employee_id");
+      const existsRes = await req.query("SELECT COUNT(1) AS c FROM [dbo].[MTIUsers] WHERE employee_id = @employee_id");
       const exists = Number((existsRes.recordset?.[0] as { c?: unknown })?.c || 0) > 0;
 
       if (oldHash === newHash) {
@@ -201,7 +201,7 @@ export async function runScheduleSync(): Promise<SyncResult> {
 
       if (exists) {
         const q = `
-          UPDATE MTIUsers SET
+          UPDATE [dbo].[MTIUsers] SET
             employee_name = @employee_name,
             gender = @gender,
             division = @division,
@@ -241,7 +241,7 @@ export async function runScheduleSync(): Promise<SyncResult> {
         updatedDetails.push(`${row.employee_id} | ${s(row.employee_name)} | ${s(row.day_type)} | ${s(row.time_in)}-${s(row.time_out)} | ${s(row.next_day)}`);
       } else {
         const q = `
-          INSERT INTO MTIUsers (
+          INSERT INTO [dbo].[MTIUsers] (
             employee_id,
             employee_name,
             gender,

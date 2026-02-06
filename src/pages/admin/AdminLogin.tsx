@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import { useAppStore } from '@/lib/services/store';
+import { loginLdap, loginLocal } from '@/lib/services/authApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { Shield, Lock, User, Eye, EyeOff, Clock, Sun, Moon, Monitor, Activity, Users, CalendarCheck } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,13 +20,14 @@ import {
 const AdminLogin = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, auth } = useAppStore();
+  const { login, loginExternal, auth } = useAppStore();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [method, setMethod] = useState<'ad' | 'local'>('ad');
   const [showPassword, setShowPassword] = useState(false);
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/admin';
@@ -43,27 +46,28 @@ const AdminLogin = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    const success = login(username, password);
-
-    if (success) {
-      toast({
-        title: 'Welcome back!',
-        description: 'You have successfully signed in to the admin portal.',
-      });
-      navigate(from, { replace: true });
-    } else {
-      toast({
-        title: 'Authentication Failed',
-        description: 'The credentials you entered are incorrect. Please try again.',
-        variant: 'destructive',
-      });
+    try {
+      if (method === 'ad') {
+        const result = await loginLdap(username, password);
+        if (result.success) {
+          loginExternal(username);
+          toast({ title: 'Welcome back!', description: 'You have successfully signed in to the admin portal.' });
+          navigate(from, { replace: true });
+        }
+      } else {
+        const result = await loginLocal(username, password);
+        if (result.success) {
+          loginExternal(username);
+          toast({ title: 'Signed in (Local)', description: 'You are signed in using local authentication.' });
+          navigate(from, { replace: true });
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Authentication error';
+      toast({ title: 'Authentication Failed', description: message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const ThemeToggle = () => (
@@ -145,6 +149,12 @@ const AdminLogin = () => {
             <Card className="border-0 shadow-xl shadow-primary/5 bg-card">
               <CardContent className="pt-6 pb-8 px-6">
                 <form onSubmit={handleSubmit} className="space-y-5">
+                  <Tabs value={method} onValueChange={(v) => setMethod(v as 'ad' | 'local')}>
+                    <TabsList>
+                      <TabsTrigger value="ad">Active Directory</TabsTrigger>
+                      <TabsTrigger value="local">Local</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                   <div className="space-y-2">
                     <Label htmlFor="username" className="text-sm font-medium">
                       Username
@@ -216,7 +226,7 @@ const AdminLogin = () => {
                         Signing in...
                       </span>
                     ) : (
-                      'Sign In'
+                      method === 'ad' ? 'Sign In (AD)' : 'Sign In (Local)'
                     )}
                   </Button>
                 </form>

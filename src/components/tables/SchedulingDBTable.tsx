@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScheduleBadge } from "@/components/ScheduleBadge";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search } from "lucide-react";
 import { fetchSchedulingEmployees, SchedulingEmployee } from "@/lib/services/schedulingApi";
+import { useLocation } from "react-router-dom";
 
 function normalizeTime(s: string): string {
   if (!s) return "";
@@ -37,10 +38,26 @@ export const SchedulingDBTable = () => {
   const [divisionFilter, setDivisionFilter] = useState<string>("all");
   const [sectionFilter, setSectionFilter] = useState<string>("all");
   const [dayTypeFilter, setDayTypeFilter] = useState<string>("all");
+  const [timeInFilter, setTimeInFilter] = useState<string>("");
+  const [timeOutFilter, setTimeOutFilter] = useState<string>("");
+  const [nextDayFilter, setNextDayFilter] = useState<string>("");
+
+  const location = useLocation();
+  useEffect(() => {
+    const qs = new URLSearchParams(location.search);
+    const descriptionParam = qs.get("description") || "";
+    const timeInParam = qs.get("timeIn") || "";
+    const timeOutParam = qs.get("timeOut") || "";
+    const nextDayParam = qs.get("nextDay") || "";
+    if (descriptionParam) setDayTypeFilter(descriptionParam);
+    if (timeInParam) setTimeInFilter(timeInParam);
+    if (timeOutParam) setTimeOutFilter(timeOutParam);
+    if (nextDayParam) setNextDayFilter(nextDayParam);
+  }, [location.search]);
 
   useEffect(() => {
     setLoading(true);
-    const param = dayTypeFilter !== "all" ? { dayType: dayTypeFilter } : undefined;
+    const param = dayTypeFilter !== "all" ? { description: dayTypeFilter } : undefined;
     fetchSchedulingEmployees(param)
       .then((rows) => {
         const mapped = rows.map((r) => ({
@@ -203,14 +220,17 @@ export const SchedulingDBTable = () => {
       const matchesDivision = divisionFilter === "all" || emp.division === divisionFilter;
       const matchesSection = sectionFilter === "all" || emp.section === sectionFilter;
       const matchesDayType = dayTypeFilter === "all" || emp.description === dayTypeFilter;
+      const matchesTimeIn = !timeInFilter || emp.timeIn === normalizeTime(timeInFilter);
+      const matchesTimeOut = !timeOutFilter || emp.timeOut === normalizeTime(timeOutFilter);
+      const matchesNextDay = !nextDayFilter || emp.nextDay === (nextDayFilter === "true" || nextDayFilter === "1");
       const matchesSearch =
         globalFilter === "" ||
         emp.name.toLowerCase().includes(globalFilter.toLowerCase()) ||
         emp.employeeId.toLowerCase().includes(globalFilter.toLowerCase());
 
-      return matchesDepartment && matchesDivision && matchesSection && matchesDayType && matchesSearch;
+      return matchesDepartment && matchesDivision && matchesSection && matchesDayType && matchesTimeIn && matchesTimeOut && matchesNextDay && matchesSearch;
     });
-  }, [data, departmentFilter, divisionFilter, sectionFilter, dayTypeFilter, globalFilter]);
+  }, [data, departmentFilter, divisionFilter, sectionFilter, dayTypeFilter, timeInFilter, timeOutFilter, nextDayFilter, globalFilter]);
 
   const columns: ColumnDef<SchedulingEmployee>[] = [
     {

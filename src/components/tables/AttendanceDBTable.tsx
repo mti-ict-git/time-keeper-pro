@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar, Filter } from "lucide-react";
 import { AttendanceReportRow, fetchAttendanceReport } from "@/lib/services/attendanceApi";
 import { Badge } from "@/components/ui/badge";
 import { ScheduleBadge } from "@/components/ScheduleBadge";
@@ -43,6 +43,8 @@ export const AttendanceDBTable = () => {
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [openFilterId, setOpenFilterId] = useState<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(globalFilter), 300);
@@ -71,21 +73,72 @@ export const AttendanceDBTable = () => {
   const departments = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["department", "dept"])))).filter(Boolean).sort(), [data]);
 
   const filteredData = useMemo(() => {
+    function getValue(colId: string, r: AttendanceReportRow): string {
+      const map: Record<string, string[]> = {
+        employeeId: ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"],
+        employeeName: ["employee_name", "name"],
+        department: ["department", "dept"],
+        position: ["position_title", "position", "Title"],
+        date: ["date", "attendance_date", "record_date"],
+        schedule: ["schedule_label"],
+        scheduled_in: ["scheduled_in"],
+        scheduled_out: ["scheduled_out"],
+        actual_in: ["actual_in"],
+        actual_out: ["actual_out"],
+        controller: ["controller_in", "controller_out"],
+        status: ["status_in", "statusin", "status_out", "statusout"],
+      };
+      if (colId === "controller") {
+        const a = pick(r, ["controller_in"]);
+        const b = pick(r, ["controller_out"]);
+        return [a, b].filter(Boolean).join(" ");
+      }
+      if (colId === "status") {
+        const a = pick(r, ["status_in", "statusin"]);
+        const b = pick(r, ["status_out", "statusout"]);
+        return [a, b].filter(Boolean).join(" ");
+      }
+      const keys = map[colId] || [];
+      return pick(r, keys);
+    }
+    function includesCI(hay: string, needle: string): boolean {
+      return hay.toLowerCase().includes(needle.toLowerCase());
+    }
     return data.filter((row) => {
       const department = pick(row, ["department", "dept"]);
       const matchesDepartment = departmentFilter === "all" || department === departmentFilter;
-      return matchesDepartment;
+      if (!matchesDepartment) return false;
+      const entries = Object.entries(columnFilters).filter(([_, v]) => v && v.trim().length);
+      for (const [colId, val] of entries) {
+        const cell = getValue(colId, row);
+        if (!cell || !includesCI(cell, String(val))) return false;
+      }
+      return true;
     });
-  }, [data, departmentFilter]);
+  }, [data, departmentFilter, columnFilters]);
 
   const columns: ColumnDef<AttendanceReportRow>[] = [
     {
       id: "employeeId",
       header: ({ column }) => (
-        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
-          Employee ID
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
+        <div className="relative flex items-center gap-2">
+          <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
+            Employee ID
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "employeeId" ? null : "employeeId")}> 
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "employeeId" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["employeeId"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, employeeId: e.target.value }))} placeholder="Filter Employee ID" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, employeeId: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
       ),
       cell: ({ row }) => (
         <span className="font-mono text-xs">
@@ -96,18 +149,80 @@ export const AttendanceDBTable = () => {
     {
       id: "employeeName",
       header: ({ column }) => (
-        <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
-          Name
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
+        <div className="relative flex items-center gap-2">
+          <Button variant="ghost" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} className="p-0 hover:bg-transparent">
+            Name
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "employeeName" ? null : "employeeName")}> 
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "employeeName" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["employeeName"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, employeeName: e.target.value }))} placeholder="Filter Name" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, employeeName: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
       ),
       cell: ({ row }) => <span className="text-sm font-medium break-words whitespace-normal">{pick(row.original, ["employee_name", "name"]) || "—"}</span>,
     },
-    { id: "department", header: "Department", cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["department", "dept"]) || "—"}</span> },
-    { id: "position", header: "Position", cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["position_title", "position", "Title"]) || "N/A"}</span> },
+    { id: "department", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>Department</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "department" ? null : "department")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "department" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["department"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, department: e.target.value }))} placeholder="Filter Department" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, department: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["department", "dept"]) || "—"}</span> },
+    { id: "position", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>Position</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "position" ? null : "position")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "position" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["position"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, position: e.target.value }))} placeholder="Filter Position" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, position: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["position_title", "position", "Title"]) || "N/A"}</span> },
     {
       id: "date",
-      header: "Date",
+      header: ({ column }) => (
+        <div className="relative flex items-center gap-2">
+          <span>Date</span>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "date" ? null : "date")}>
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "date" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["date"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, date: e.target.value }))} placeholder="Filter Date (YYYY-MM-DD)" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, date: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
       cell: ({ row }) => {
         const d = pick(row.original, ["date", "attendance_date", "record_date"]);
         return <span className="font-mono text-xs">{d ? formatDate(new Date(`${d}T00:00:00`), "dd MMM yyyy") : "—"}</span>;
@@ -115,7 +230,23 @@ export const AttendanceDBTable = () => {
     },
     {
       id: "schedule",
-      header: "Schedule",
+      header: ({ column }) => (
+        <div className="relative flex items-center gap-2">
+          <span>Schedule</span>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "schedule" ? null : "schedule")}>
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "schedule" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["schedule"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, schedule: e.target.value }))} placeholder="Filter Schedule label" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, schedule: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
       cell: ({ row }) => {
         const label = pick(row.original, ["schedule_label"]);
         const ti = pick(row.original, ["scheduled_in"]);
@@ -128,13 +259,93 @@ export const AttendanceDBTable = () => {
         );
       },
     },
-    { id: "scheduled_in", header: "C IN (Schedule)", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_in"]) || "N/A"}</span> },
-    { id: "scheduled_out", header: "C OUT (Schedule)", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_out"]) || "N/A"}</span> },
-    { id: "actual_in", header: "Actual C IN", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_in"]) || "N/A"}</span> },
-    { id: "actual_out", header: "Actual C OUT", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_out"]) || "N/A"}</span> },
+    { id: "scheduled_in", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>C IN (Schedule)</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "scheduled_in" ? null : "scheduled_in")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "scheduled_in" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["scheduled_in"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, scheduled_in: e.target.value }))} placeholder="Filter C IN" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_in: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_in"]) || "N/A"}</span> },
+    { id: "scheduled_out", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>C OUT (Schedule)</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "scheduled_out" ? null : "scheduled_out")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "scheduled_out" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["scheduled_out"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, scheduled_out: e.target.value }))} placeholder="Filter C OUT" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, scheduled_out: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_out"]) || "N/A"}</span> },
+    { id: "actual_in", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>Actual C IN</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "actual_in" ? null : "actual_in")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "actual_in" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["actual_in"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, actual_in: e.target.value }))} placeholder="Filter Actual IN" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, actual_in: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_in"]) || "N/A"}</span> },
+    { id: "actual_out", header: ({ column }) => (
+      <div className="relative flex items-center gap-2">
+        <span>Actual C OUT</span>
+        <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "actual_out" ? null : "actual_out")}>
+          <Filter className="h-3 w-3" />
+        </Button>
+        {openFilterId === "actual_out" && (
+          <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+            <Input value={columnFilters["actual_out"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, actual_out: e.target.value }))} placeholder="Filter Actual OUT" />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, actual_out: "" })); setOpenFilterId(null); }}>Clear</Button>
+              <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+    ), cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_out"]) || "N/A"}</span> },
     {
       id: "controller",
-      header: "Controller",
+      header: ({ column }) => (
+        <div className="relative flex items-center gap-2">
+          <span>Controller</span>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "controller" ? null : "controller")}>
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "controller" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["controller"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, controller: e.target.value }))} placeholder="Filter Controller" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, controller: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
       cell: ({ row }) => {
         const ctrlIn = pick(row.original, ["controller_in"]);
         const ctrlOut = pick(row.original, ["controller_out"]);
@@ -152,7 +363,23 @@ export const AttendanceDBTable = () => {
     },
     {
       id: "status",
-      header: "Status",
+      header: ({ column }) => (
+        <div className="relative flex items-center gap-2">
+          <span>Status</span>
+          <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "status" ? null : "status")}>
+            <Filter className="h-3 w-3" />
+          </Button>
+          {openFilterId === "status" && (
+            <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-56">
+              <Input value={columnFilters["status"] || ""} onChange={(e) => setColumnFilters((p) => ({ ...p, status: e.target.value }))} placeholder="Filter Status" />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setColumnFilters((p) => ({ ...p, status: "" })); setOpenFilterId(null); }}>Clear</Button>
+                <Button size="sm" onClick={() => setOpenFilterId(null)}>Apply</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      ),
       cell: ({ row }) => {
         const sin = pick(row.original, ["status_in", "statusin"]);
         const sout = pick(row.original, ["status_out", "statusout"]);
@@ -241,7 +468,7 @@ export const AttendanceDBTable = () => {
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="text-xs">
+                  <TableHead key={header.id} className="text-xs relative">
                     {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>
                 ))}

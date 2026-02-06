@@ -12,8 +12,8 @@ COPY public ./public
 COPY vite.config.ts tsconfig.app.json tsconfig.json ./
 
 ENV NODE_ENV=development
-ENV VITE_BACKEND_URL="http://localhost:5001"
+ENV VITE_BACKEND_URL="http://localhost:5000"
 
-EXPOSE 8080
+EXPOSE 9000
 
 CMD ["npm", "run", "dev"]

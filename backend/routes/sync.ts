@@ -12,6 +12,10 @@ let intervalMinutes = process.env.SYNC_INTERVAL_MINUTES ? Number(process.env.SYN
 let enabled = true;
 let nextRunAt: Date | null = null;
 let timer: NodeJS.Timeout | null = null;
+let retrying = false;
+let retryCount = 0;
+const retryBaseMs = process.env.SYNC_RETRY_BASE_MS ? Number(process.env.SYNC_RETRY_BASE_MS) : 30000;
+const retryMaxMs = process.env.SYNC_RETRY_MAX_MS ? Number(process.env.SYNC_RETRY_MAX_MS) : 300000;
 
 async function ensureSettingsTable(): Promise<void> {
   const pool = await getPool();
@@ -126,7 +130,26 @@ function scheduleNext() {
   nextRunAt = new Date(Date.now() + ms);
   timer = setTimeout(async () => {
     await runNow();
-    scheduleNext();
+    if (retrying) {
+      const m = Math.min(retryBaseMs * Math.pow(2, Math.max(0, retryCount - 1)), retryMaxMs);
+      scheduleAfter(m);
+    } else {
+      scheduleNext();
+    }
+  }, ms);
+}
+
+function scheduleAfter(ms: number) {
+  if (timer) clearTimeout(timer);
+  nextRunAt = new Date(Date.now() + ms);
+  timer = setTimeout(async () => {
+    await runNow();
+    if (retrying) {
+      const m = Math.min(retryBaseMs * Math.pow(2, Math.max(0, retryCount - 1)), retryMaxMs);
+      scheduleAfter(m);
+    } else {
+      scheduleNext();
+    }
   }, ms);
 }
 
@@ -137,6 +160,8 @@ async function runNow() {
     const result = await runScheduleSync();
     lastRun = { ...result, success: true };
     await saveLog(lastRun);
+    retrying = false;
+    retryCount = 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     lastRun = {
@@ -151,6 +176,8 @@ async function runNow() {
       error: message,
     };
     await saveLog(lastRun);
+    retrying = true;
+    retryCount += 1;
   } finally {
     running = false;
   }
@@ -162,6 +189,8 @@ syncRouter.get("/status", (_req: Request, res: Response) => {
     intervalMinutes,
     enabled,
     nextRunAt,
+    retrying,
+    retryCount,
     lastRun,
   });
 });

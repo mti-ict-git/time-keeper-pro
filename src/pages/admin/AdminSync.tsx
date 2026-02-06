@@ -111,6 +111,8 @@ const AdminSync = () => {
                 <span className="text-sm text-muted-foreground">State</span>
                 {status?.running ? (
                   <Badge variant="outline" className="bg-info/10 text-info">Running</Badge>
+                ) : status?.retrying ? (
+                  <Badge variant="outline" className="bg-warning/10 text-warning">Retrying (Attempt {status.retryCount})</Badge>
                 ) : (
                   <Badge variant="outline">Idle</Badge>
                 )}

@@ -41,14 +41,46 @@ export const schedulingRouter = Router();
 schedulingRouter.get("/employees", async (req: Request, res: Response) => {
   try {
     const pool = await getPool();
+    const descriptionParam = String(req.query.description ?? "").trim();
     const dayTypeParam = String(req.query.dayType ?? "").trim();
+    const timeInParam = String(req.query.timeIn ?? "").trim();
+    const timeOutParam = String(req.query.timeOut ?? "").trim();
+    const nextDayParam = String(req.query.nextDay ?? "").trim();
+
     const request = pool.request();
     let query =
       "SELECT employee_id, employee_name, gender, division, department, section, supervisor_id, supervisor_name, position_title, grade_interval, phone, day_type, description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM MTIUsers";
+
+    const where: string[] = [];
+    if (descriptionParam) {
+      request.input("description", sql.NVarChar, descriptionParam);
+      where.push("description = @description");
+    }
     if (dayTypeParam) {
       request.input("dayType", sql.NVarChar, dayTypeParam);
-      query += " WHERE description = @dayType";
+      where.push("day_type = @dayType");
     }
+    if (timeInParam) {
+      request.input("timeIn", sql.NVarChar, timeInParam);
+      where.push("CONVERT(varchar(5), time_in, 108) = @timeIn");
+    }
+    if (timeOutParam) {
+      request.input("timeOut", sql.NVarChar, timeOutParam);
+      where.push("CONVERT(varchar(5), time_out, 108) = @timeOut");
+    }
+    if (nextDayParam) {
+      const isNext = toBoolNextDay(nextDayParam);
+      if (isNext) {
+        where.push("LOWER(LTRIM(RTRIM(CAST(next_day AS nvarchar(10))))) IN ('y','yes','true','1')");
+      } else {
+        where.push("LOWER(LTRIM(RTRIM(CAST(next_day AS nvarchar(10))))) IN ('n','no','false','0')");
+      }
+    }
+
+    if (where.length > 0) {
+      query += " WHERE " + where.join(" AND ");
+    }
+
     const result = await request.query(query);
     const rows = (result.recordset ?? []) as MtiUserRow[];
     const data: SchedulingEmployee[] = rows.map(mapRow);

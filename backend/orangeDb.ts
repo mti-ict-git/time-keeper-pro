@@ -10,7 +10,7 @@ function getEnv(name: string, fallback?: string): string {
 
 export function getOrangePool(): Promise<sql.ConnectionPool> {
   if (!orangePoolPromise) {
-    orangePoolPromise = sql.connect({
+    const pool = new sql.ConnectionPool({
       user: getEnv("ORANGE_DB_USER"),
       password: getEnv("ORANGE_DB_PASSWORD"),
       server: getEnv("ORANGE_DB_SERVER"),
@@ -18,6 +18,7 @@ export function getOrangePool(): Promise<sql.ConnectionPool> {
       port: process.env.ORANGE_DB_PORT ? Number(process.env.ORANGE_DB_PORT) : 1433,
       options: { encrypt: false, trustServerCertificate: true },
     });
+    orangePoolPromise = pool.connect();
   }
   return orangePoolPromise as Promise<sql.ConnectionPool>;
 }

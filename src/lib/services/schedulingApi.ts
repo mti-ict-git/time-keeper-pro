@@ -17,9 +17,13 @@ export interface SchedulingEmployee {
   nextDay: boolean;
 }
 
-export async function fetchSchedulingEmployees(params?: { dayType?: string }): Promise<SchedulingEmployee[]> {
+export async function fetchSchedulingEmployees(params?: { description?: string; dayType?: string; timeIn?: string; timeOut?: string; nextDay?: boolean }): Promise<SchedulingEmployee[]> {
   const qs = new URLSearchParams();
+  if (params?.description) qs.set("description", params.description);
   if (params?.dayType) qs.set("dayType", params.dayType);
+  if (params?.timeIn) qs.set("timeIn", params.timeIn);
+  if (params?.timeOut) qs.set("timeOut", params.timeOut);
+  if (typeof params?.nextDay === "boolean") qs.set("nextDay", String(params.nextDay));
   const url = qs.toString() ? `/api/scheduling/employees?${qs.toString()}` : "/api/scheduling/employees";
   const res = await fetch(url, {
     headers: { "Accept": "application/json" },

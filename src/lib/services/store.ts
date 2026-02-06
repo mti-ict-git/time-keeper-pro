@@ -10,7 +10,7 @@ import {
   AuditLog,
   AuthState,
 } from '../models';
-import { seedData } from './dataSeeder';
+import { seedData, generateAttendanceRecords } from './dataSeeder';
 
 // Generate unique ID
 const generateId = () => Math.random().toString(36).substring(2, 11);
@@ -22,6 +22,7 @@ interface AppState {
   // Auth
   auth: AuthState;
   login: (username: string, password: string) => boolean;
+  loginExternal: (username: string) => void;
   logout: () => void;
 
   // Employees
@@ -84,6 +85,17 @@ export const useAppStore = create<AppState>()(
           return true;
         }
         return false;
+      },
+      loginExternal: (username: string) => {
+        set({ auth: { isAuthenticated: true, user: username } });
+        get().addAuditLog({
+          userId: username,
+          action: 'login',
+          entityType: 'auth',
+          entityId: username,
+          before: null,
+          after: { user: username },
+        });
       },
       logout: () => {
         const user = get().auth.user;
@@ -375,7 +387,5 @@ function regenerateRecords(
   controllers: Controller[],
   rules: AttendanceRules
 ): ProcessedAttendanceRecord[] {
-  // Import dynamically to avoid circular dependency
-  const { generateAttendanceRecords } = require('./dataSeeder');
   return generateAttendanceRecords(employees, schedules, assignments, controllers, rules);
 }

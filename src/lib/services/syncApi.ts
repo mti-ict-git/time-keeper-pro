@@ -3,6 +3,8 @@ export interface SyncStatus {
   intervalMinutes: number;
   enabled: boolean;
   nextRunAt: string | null;
+  retrying: boolean;
+  retryCount: number;
   lastRun: SyncLog | null;
 }
 

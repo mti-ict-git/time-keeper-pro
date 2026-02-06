@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile.backend
     container_name: timekeeper-backend
     environment:
-      - PORT=5001
+      - PORT=5000
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_SERVER=${DB_SERVER:-mssql}
@@ -20,7 +20,7 @@ services:
       - ORANGE_DB_PORT=${ORANGE_DB_PORT:-1433}
       - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-5}
     ports:
-      - "5001:5001"
+      - "5000:5000"
     volumes:
       - .:/app
       - /app/node_modules
@@ -33,9 +33,9 @@ services:
       dockerfile: Dockerfile.web
     container_name: timekeeper-web
     environment:
-      - VITE_BACKEND_URL=http://backend:5001
+      - VITE_BACKEND_URL=http://backend:5000
     ports:
-      - "8080:8080"
+      - "9000:9000"
     volumes:
       - .:/app
       - /app/node_modules
