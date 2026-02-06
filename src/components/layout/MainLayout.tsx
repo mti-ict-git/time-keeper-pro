@@ -276,7 +276,7 @@ export const MainLayout = ({ children }: MainLayoutProps) => {
       {/* Main Content */}
       <main
         className={cn(
-          'container mx-auto px-4 py-6',
+          'w-full max-w-none px-4 py-6',
           auth.isAuthenticated && isAdminRoute && 'lg:ml-64 lg:max-w-[calc(100%-16rem)]'
         )}
       >

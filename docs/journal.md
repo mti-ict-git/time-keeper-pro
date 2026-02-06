@@ -635,6 +635,14 @@ Verification:
 
 - Added API base helper for frontend; services now build URLs via buildApiUrl respecting VITE_API_BASE_URL and VITE_USE_RELATIVE_API_URL; added Vite proxy rule to rewrite /API to /api; set envs in docker-compose and .env
 
+2026-02-06 15:58:12 WITA
+
+- Fixed Vite dev proxy to read env using loadEnv; proxy target now honors VITE_BACKEND_URL from .env and defaults to http://localhost:5001; prevents 403 when backend runs on 5001 in local dev
+
+2026-02-06 16:04:03 WITA
+
+- Made main content area full width by replacing Tailwind container with w-full max-w-none in MainLayout; attendance table now uses full viewport width, reducing horizontal scroll
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
