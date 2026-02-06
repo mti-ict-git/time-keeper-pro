@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAppStore } from '@/lib/services/store';
 import { StatsCard } from '@/components/StatsCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,6 +20,7 @@ import {
   Area,
 } from 'recharts';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter } from 'date-fns';
+import { fetchAttendanceReport, AttendanceReportRow } from '@/lib/services/attendanceApi';
 import { FileText, Calendar, BarChart3, CheckCircle, XCircle, Clock, TrendingUp } from 'lucide-react';
 
 const COLORS = {
@@ -35,15 +35,24 @@ const COLORS = {
 type DateRange = 'day' | 'week' | 'month' | 'quarter';
 
 const Dashboard = () => {
-  const { attendanceRecords, controllers, employees } = useAppStore();
   const [dateRange, setDateRange] = useState<DateRange>('week');
+  const [rows, setRows] = useState<AttendanceReportRow[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
 
-  // Filter records by date range
-  const filteredRecords = useMemo(() => {
+  function pick(row: AttendanceReportRow, keys: string[]): string {
+    for (const k of keys) {
+      const v = row[k];
+      if (v !== undefined && v !== null) return String(v);
+    }
+    return '';
+  }
+
+  // Fetch real attendance data for selected range
+  useEffect(() => {
     const today = new Date();
     let startDate: Date;
     let endDate: Date = today;
-
     switch (dateRange) {
       case 'day':
         startDate = today;
@@ -63,20 +72,23 @@ const Dashboard = () => {
       default:
         startDate = subDays(today, 7);
     }
+    const from = format(startDate, 'yyyy-MM-dd');
+    const to = format(endDate, 'yyyy-MM-dd');
+    setLoading(true);
+    fetchAttendanceReport({ from, to, limit: 2000 })
+      .then((data) => setRows(data))
+      .catch((e) => setError(e instanceof Error ? e.message : 'Unknown error'))
+      .finally(() => setLoading(false));
+  }, [dateRange]);
 
-    return attendanceRecords.filter((record) => {
-      const recordDate = new Date(record.date);
-      return recordDate >= startDate && recordDate <= endDate;
-    });
-  }, [attendanceRecords, dateRange]);
+  const filteredRecords = rows;
 
   // Calculate stats
   const stats = useMemo(() => {
     const total = filteredRecords.length;
-    const clockIns = filteredRecords.filter((r) => r.actualIn).length;
-    const valid = filteredRecords.filter((r) => r.validity === 'valid').length;
-    const invalid = filteredRecords.filter((r) => r.validity === 'invalid').length;
-
+    const clockIns = filteredRecords.filter((r) => Boolean(pick(r, ['actual_in', 'actualin']))).length;
+    const valid = filteredRecords.filter((r) => Boolean(pick(r, ['actual_in', 'actualin'])) || Boolean(pick(r, ['actual_out', 'actualout']))).length;
+    const invalid = total - valid;
     return { total, clockIns, valid, invalid };
   }, [filteredRecords]);
 
@@ -85,11 +97,11 @@ const Dashboard = () => {
     const dateMap = new Map<string, { clockIn: number; clockOut: number }>();
 
     filteredRecords.forEach((record) => {
-      const dateKey = format(new Date(record.date), 'MMM dd');
+      const d = pick(record, ['date', 'attendance_date', 'record_date']);
+      const dateKey = d ? format(new Date(`${d}T00:00:00`), 'MMM dd') : '';
       const existing = dateMap.get(dateKey) || { clockIn: 0, clockOut: 0 };
-
-      if (record.actualIn) existing.clockIn++;
-      if (record.actualOut) existing.clockOut++;
+      if (pick(record, ['actual_in', 'actualin'])) existing.clockIn++;
+      if (pick(record, ['actual_out', 'actualout'])) existing.clockOut++;
 
       dateMap.set(dateKey, existing);
     });
@@ -101,9 +113,8 @@ const Dashboard = () => {
 
   // Status Distribution pie data
   const statusDistribution = useMemo(() => {
-    const valid = filteredRecords.filter((r) => r.validity === 'valid').length;
-    const invalid = filteredRecords.filter((r) => r.validity === 'invalid').length;
-
+    const valid = filteredRecords.filter((r) => Boolean(pick(r, ['actual_in', 'actualin'])) || Boolean(pick(r, ['actual_out', 'actualout']))).length;
+    const invalid = filteredRecords.length - valid;
     return [
       { name: 'Valid', value: valid, fill: COLORS.success },
       { name: 'Invalid', value: invalid, fill: COLORS.destructive },
@@ -113,25 +124,39 @@ const Dashboard = () => {
   // Attendance by Controller
   const attendanceByController = useMemo(() => {
     const controllerMap = new Map<string, { valid: number; invalid: number }>();
-
-    controllers.forEach((c) => {
-      controllerMap.set(c.name, { valid: 0, invalid: 0 });
-    });
-
     filteredRecords.forEach((record) => {
-      if (record.controllerName) {
-        const existing = controllerMap.get(record.controllerName) || { valid: 0, invalid: 0 };
-        if (record.validity === 'valid') existing.valid++;
-        else existing.invalid++;
-        controllerMap.set(record.controllerName, existing);
-      }
+      const ctrl = pick(record, ['controller_out', 'controller_in']);
+      if (!ctrl) return;
+      const existing = controllerMap.get(ctrl) || { valid: 0, invalid: 0 };
+      const isValid = Boolean(pick(record, ['actual_in', 'actualin'])) || Boolean(pick(record, ['actual_out', 'actualout']));
+      if (isValid) existing.valid++;
+      else existing.invalid++;
+      controllerMap.set(ctrl, existing);
     });
+    return Array.from(controllerMap.entries()).map(([controller, data]) => ({ controller, ...data }));
+  }, [filteredRecords]);
 
-    return Array.from(controllerMap.entries()).map(([controller, data]) => ({
-      controller,
-      ...data,
-    }));
-  }, [filteredRecords, controllers]);
+  // Attendance by Position (e.g., Staff, Non Staff, etc.)
+  const attendanceByPosition = useMemo(() => {
+    function normalizePosition(v: string): string {
+      const s = v.trim().toLowerCase();
+      if (!s) return 'N/A';
+      if (s.includes('non') && s.includes('staff')) return 'Non Staff';
+      if (s === 'staff' || s.includes('staff')) return 'Staff';
+      return v.trim();
+    }
+    const map = new Map<string, { valid: number; invalid: number }>();
+    filteredRecords.forEach((record) => {
+      const raw = pick(record, ['position_title', 'position', 'Title']);
+      const pos = normalizePosition(raw);
+      const existing = map.get(pos) || { valid: 0, invalid: 0 };
+      const isValid = Boolean(pick(record, ['actual_in', 'actualin'])) || Boolean(pick(record, ['actual_out', 'actualout']));
+      if (isValid) existing.valid++;
+      else existing.invalid++;
+      map.set(pos, existing);
+    });
+    return Array.from(map.entries()).map(([position, data]) => ({ position, ...data }));
+  }, [filteredRecords]);
 
   const validPercent = stats.total > 0 ? ((stats.valid / stats.total) * 100).toFixed(1) : 0;
 
@@ -141,7 +166,7 @@ const Dashboard = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25">
-            {employees.length > 0 ? employees[0].name.charAt(0) : 'A'}
+            {rows.length > 0 ? pick(rows[0], ['employee_name', 'name']).charAt(0) || 'A' : 'A'}
           </div>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Welcome back! 👋</h1>
@@ -356,6 +381,47 @@ const Dashboard = () => {
                 <XAxis type="number" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                 <YAxis 
                   dataKey="controller" 
+                  type="category" 
+                  tick={{ fontSize: 12 }} 
+                  width={120} 
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'hsl(var(--card))',
+                    border: 'none',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.2)',
+                  }}
+                />
+                <Legend />
+                <Bar dataKey="valid" name="Valid" fill={COLORS.success} radius={[0, 6, 6, 0]} barSize={20} />
+                <Bar dataKey="invalid" name="Invalid" fill={COLORS.destructive} radius={[0, 6, 6, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Attendance by Position */}
+      <Card className="border-0 shadow-lg shadow-primary/5">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg font-semibold">Attendance by Position</CardTitle>
+              <p className="text-sm text-muted-foreground">Staff vs Non Staff breakdown</p>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={attendanceByPosition} layout="vertical" barGap={8}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={true} vertical={false} />
+                <XAxis type="number" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                <YAxis 
+                  dataKey="position" 
                   type="category" 
                   tick={{ fontSize: 12 }} 
                   width={120} 

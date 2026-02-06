@@ -17,6 +17,66 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing repo warnings/errors remain unrelated to changes
 
+2026-02-06 10:11:52 WITA
+
+- Added backend sync feature: Orange DB → EmployeeWorkflow MTIUsers
+- Implemented backend/orangeDb.ts for source connection
+- Implemented backend/sync.ts with hash-based update/insert and phone length handling
+- Added backend/routes/sync.ts with endpoints: status, run, config, logs; scheduled repeating job (default 5 min)
+- Mounted /api/sync in server; added Admin Sync page with interval control, run button, and logs
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:17:05 WITA
+
+- Persisted sync enable/disable and interval to DB via SyncSettings table
+- Added backend/schema/sync_settings.sql for reproducible schema
+- Updated /api/sync/status to include enabled; /api/sync/config now saves to DB
+- Admin Sync page now includes an Enable switch and Save button
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:19:12 WITA
+
+- Added npm run db:apply-schema script to apply backend/schema/*.sql to EmployeeWorkflow DB
+- Implemented backend/scripts/apply_schema.ts (ESM-safe __dirname via import.meta.url)
+- Applied SyncSettings schema via npm run db:apply-schema (success)
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:24:34 WITA
+
+- Added SyncLogs schema [backend/schema/sync_logs.sql] and applied via npm run db:apply-schema
+- Persisted each sync run (success/failure) to SyncLogs with error message and details
+- Updated /api/sync/logs to return history from DB (default limit 50)
+- Extended Admin Sync to show Error column and display failure messages
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
+2026-02-06 10:28:54 WITA
+
+- Executed Python sync: backend/sync_schedule.py
+- Result: Sync completed total=1009 updated=0 inserted=0 unchanged=1009
+- Concluded Orange objects are reachable with current credentials
+- Relaxed Node pre-check to include sys.tables/views/synonyms and allow direct query
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing repo errors/warnings remain unrelated to this change
+
 2026-02-06 09:47:55 WITA
 
 - Computed Status IN/OUT in attendance report when DB does not provide StatusIn/StatusOut
@@ -193,6 +253,38 @@ Verification:
 2026-02-06 09:57:33 WITA
 
 - Widened Attendance Records Schedule column with a min-width to better display descriptions
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:04:48 WITA
+
+- Made Attendance Records table fit without horizontal scrolling: reduced font sizes, allowed text wrapping, responsive min-width for Schedule, and max-width for Controller; adjusted table headers to compact styling
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:07:30 WITA
+
+- Adjusted Schedule column to fit content width using w-fit + whitespace-nowrap so the column expands just enough to accommodate label text
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:24:22 WITA
+
+- Wired Dashboard to real attendance data via /api/attendance/report; removed dependency on mock store for statistics and charts; computed valid/invalid using presence of actual_in/out; built controller chart from controller_out/in
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+
+2026-02-06 10:27:03 WITA
+
+- Added Attendance by Position chart to Dashboard: groups rows by normalized position (Staff, Non Staff, etc) and shows Valid/Invalid bars
 
 Verification:
 

@@ -20,6 +20,7 @@ import {
   AdminAssignments,
   AdminRules,
   AdminAuditLog,
+  AdminSync,
 } from "./pages/admin";
 
 import NotFound from "./pages/NotFound";
@@ -94,6 +95,15 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/admin/sync"
+              element={
+                <ProtectedRoute>
+                  <AdminSync />
+                </ProtectedRoute>
+              }
+            />
+
             <Route
               path="/admin/audit"
               element={

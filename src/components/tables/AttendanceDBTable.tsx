@@ -88,7 +88,7 @@ export const AttendanceDBTable = () => {
         </Button>
       ),
       cell: ({ row }) => (
-        <span className="font-mono text-sm">
+        <span className="font-mono text-xs">
           {pick(row.original, ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"]) || "—"}
         </span>
       ),
@@ -101,16 +101,16 @@ export const AttendanceDBTable = () => {
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => <span className="font-medium">{pick(row.original, ["employee_name", "name"]) || "—"}</span>,
+      cell: ({ row }) => <span className="text-sm font-medium break-words whitespace-normal">{pick(row.original, ["employee_name", "name"]) || "—"}</span>,
     },
-    { id: "department", header: "Department", cell: ({ row }) => <span>{pick(row.original, ["department", "dept"]) || "—"}</span> },
-    { id: "position", header: "Position", cell: ({ row }) => <span>{pick(row.original, ["position_title", "position", "Title"]) || "N/A"}</span> },
+    { id: "department", header: "Department", cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["department", "dept"]) || "—"}</span> },
+    { id: "position", header: "Position", cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["position_title", "position", "Title"]) || "N/A"}</span> },
     {
       id: "date",
       header: "Date",
       cell: ({ row }) => {
         const d = pick(row.original, ["date", "attendance_date", "record_date"]);
-        return <span className="font-mono text-sm">{d ? formatDate(new Date(`${d}T00:00:00`), "dd MMM yyyy") : "—"}</span>;
+        return <span className="font-mono text-xs">{d ? formatDate(new Date(`${d}T00:00:00`), "dd MMM yyyy") : "—"}</span>;
       },
     },
     {
@@ -122,16 +122,16 @@ export const AttendanceDBTable = () => {
         const to = pick(row.original, ["scheduled_out"]);
         if (!ti && !to && !label) return <span className="text-muted-foreground">N/A</span>;
         return (
-          <div className="min-w-[220px]">
+          <div className="inline-block w-fit whitespace-nowrap">
             <ScheduleBadge timeIn={ti || ""} timeOut={to || ""} label={label || undefined} />
           </div>
         );
       },
     },
-    { id: "scheduled_in", header: "C IN (Schedule)", cell: ({ row }) => <span className="font-mono text-sm">{pick(row.original, ["scheduled_in"]) || "N/A"}</span> },
-    { id: "scheduled_out", header: "C OUT (Schedule)", cell: ({ row }) => <span className="font-mono text-sm">{pick(row.original, ["scheduled_out"]) || "N/A"}</span> },
-    { id: "actual_in", header: "Actual C IN", cell: ({ row }) => <span className="font-mono text-sm">{pick(row.original, ["actual_in"]) || "N/A"}</span> },
-    { id: "actual_out", header: "Actual C OUT", cell: ({ row }) => <span className="font-mono text-sm">{pick(row.original, ["actual_out"]) || "N/A"}</span> },
+    { id: "scheduled_in", header: "C IN (Schedule)", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_in"]) || "N/A"}</span> },
+    { id: "scheduled_out", header: "C OUT (Schedule)", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["scheduled_out"]) || "N/A"}</span> },
+    { id: "actual_in", header: "Actual C IN", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_in"]) || "N/A"}</span> },
+    { id: "actual_out", header: "Actual C OUT", cell: ({ row }) => <span className="font-mono text-xs">{pick(row.original, ["actual_out"]) || "N/A"}</span> },
     {
       id: "controller",
       header: "Controller",
@@ -147,7 +147,7 @@ export const AttendanceDBTable = () => {
           );
         }
         const value = ctrlIn || ctrlOut;
-        return <span className="text-sm">{value || "—"}</span>;
+        return <span className="text-xs break-words whitespace-normal max-w-[180px]">{value || "—"}</span>;
       },
     },
     {
@@ -166,8 +166,8 @@ export const AttendanceDBTable = () => {
         };
         return (
           <div className="space-y-1">
-            <Badge variant="outline" className={style(sin)}>{sin ? `IN: ${sin}` : "IN: N/A"}</Badge>
-            <Badge variant="outline" className={style(sout)}>{sout ? `OUT: ${sout}` : "OUT: N/A"}</Badge>
+            <Badge variant="outline" className={`text-xs ${style(sin)}`}>{sin ? `IN: ${sin}` : "IN: N/A"}</Badge>
+            <Badge variant="outline" className={`text-xs ${style(sout)}`}>{sout ? `OUT: ${sout}` : "OUT: N/A"}</Badge>
           </div>
         );
       },
@@ -241,7 +241,7 @@ export const AttendanceDBTable = () => {
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="whitespace-nowrap">
+                  <TableHead key={header.id} className="text-xs">
                     {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                   </TableHead>
                 ))}

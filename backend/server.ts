@@ -6,6 +6,7 @@ import { getPool } from "./db";
 import { schedulingRouter } from "./routes/scheduling";
 import { usersRouter } from "./routes/users";
 import { attendanceRouter } from "./routes/attendance";
+import { syncRouter } from "./routes/sync";
 
 type MtiUserRow = {
   employee_id: string;
@@ -138,6 +139,7 @@ app.use(express.json());
 app.use("/api/scheduling", schedulingRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/attendance", attendanceRouter);
+app.use("/api/sync", syncRouter);
 
  
 

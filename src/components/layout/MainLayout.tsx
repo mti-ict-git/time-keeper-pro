@@ -28,6 +28,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  RefreshCcw,
 } from 'lucide-react';
 
 interface MainLayoutProps {
@@ -48,6 +49,7 @@ const adminNavItems = [
   { path: '/admin/controllers', label: 'Controllers', icon: Cpu },
   { path: '/admin/rules', label: 'Attendance Rules', icon: Settings },
   { path: '/admin/audit', label: 'Audit Log', icon: Activity },
+  { path: '/admin/sync', label: 'Sync', icon: RefreshCcw },
 ];
 
 export const MainLayout = ({ children }: MainLayoutProps) => {
