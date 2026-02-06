@@ -533,6 +533,15 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint ran without errors
 
+2026-02-06 13:43:20 WITA
+
+- Removed MSSQL service from docker-compose; backend now connects to external MSSQL using DB_SERVER env
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint ran without errors
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
