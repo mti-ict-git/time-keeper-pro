@@ -623,6 +623,10 @@ Verification:
 
 - Configured Vite HMR for HTTPS domain: set server.host=true and server.hmr { protocol: 'wss', host: 'attendance.merdekabattery.com', clientPort: 443 } to fix websocket connection when accessing dev via attendance.merdekabattery.com
 
+2026-02-06 15:39:17 WITA
+
+- Switched backend service in docker-compose to use env_file (.env) and only override PORT=5000; containers now receive DB and LDAP settings from .env without listing each variable in compose
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
