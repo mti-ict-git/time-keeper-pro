@@ -615,6 +615,10 @@ Verification:
 
 - Allowed host attendance.merdekabattery.com in Vite dev server via server.allowedHosts to fix 403 “Blocked request” when accessing frontend through that domain
 
+2026-02-06 15:36:21 WITA
+
+- Updated docker-compose web environment to set VITE_BACKEND_URL=https://attendance.merdekabattery.com to avoid mixed content and route API via same HTTPS origin
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
