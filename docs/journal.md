@@ -521,6 +521,16 @@ Verification:
 
 - npx tsc --noEmit ran successfully
 
+2026-02-07 14:04:37 WITA
+
+- Fixed attendance aggregation for overnight shifts (cross-day logic) in backend/routes/attendance.ts
+- Implemented logic to shift "Clock Out" events to the previous day if they occur before noon (12:00) on an overnight schedule
+- Verified fix with script confirming correct date shifting for shifts like 23:00-07:00
+
+Verification:
+
+- npx tsx backend/scripts/verify_aggregation.ts passed successfully with correct date shifts
+
 2026-02-06 10:53:52 WITA
 
 - Added Admin Users page and navigation item; lists Users from backend /api/users with search

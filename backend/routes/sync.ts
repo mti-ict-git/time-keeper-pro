@@ -155,6 +155,24 @@ function scheduleAfter(ms: number) {
 
 async function runNow() {
   if (running) return;
+  
+  // Distributed check: Ensure we don't run if another instance just ran
+  try {
+    const logs = await fetchLogs(1);
+    const lastLog = logs[0];
+    if (lastLog && enabled) {
+      const elapsed = Date.now() - lastLog.timestamp.getTime();
+      const minInterval = (intervalMinutes * 60 * 1000) - 10000; // 10s buffer
+      if (elapsed < minInterval) {
+        console.log(`[Sync] Skipping run. Last run was ${Math.round(elapsed / 1000)}s ago (Interval: ${intervalMinutes}m)`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("[Sync] Failed to check last run time:", err);
+    // Proceed cautiously
+  }
+
   running = true;
   try {
     const result = await runScheduleSync();

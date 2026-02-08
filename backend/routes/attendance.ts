@@ -138,14 +138,44 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       const dtRaw = obj["TrDateTime"] ?? obj["trdatetime"] ?? "";
       const evRaw = obj["ClockEvent"] ?? obj["clock_event"] ?? "";
       const ev = String(evRaw).toLowerCase();
-      const key = `${staff}|${formatDate(dateRaw)}`;
+
+      // Determine the effective date (shift date)
+      // If it's an overnight shift and we are clocking out in the morning, 
+      // it belongs to the previous day's shift.
+      const schedIn = formatTime(obj["ScheduledClockIn"] ?? obj["scheduled_clock_in"] ?? obj["scheduledin"] ?? "");
+      const schedOut = formatTime(obj["ScheduledClockOut"] ?? obj["scheduled_clock_out"] ?? obj["scheduledout"] ?? "");
+      
+      let effectiveDateStr = formatDate(dateRaw);
+      
+      if (schedIn && schedOut) {
+        const [hi, mi] = schedIn.split(":");
+        const [ho, mo] = schedOut.split(":");
+        const minI = Number(hi) * 60 + Number(mi);
+        const minO = Number(ho) * 60 + Number(mo);
+        const nextDay = minO <= minI;
+
+        if (nextDay && ev.includes("out")) {
+           const actual = formatTime(dtRaw);
+           if (actual) {
+             const [ah] = actual.split(":").map(Number);
+             // If clock out is before noon (12:00), assume it belongs to previous day
+             if (ah < 12) {
+               const d = new Date(dateRaw as string | Date);
+               d.setDate(d.getDate() - 1);
+               effectiveDateStr = formatDate(d);
+             }
+           }
+        }
+      }
+
+      const key = `${staff}|${effectiveDateStr}`;
       const prev = agg.get(key);
       const next: Record<string, unknown> = prev ?? {
         employee_id: staff,
         employee_name: String(name),
         department: String(dept),
         position_title: String(position),
-        date: formatDate(dateRaw),
+        date: effectiveDateStr,
         schedule_label: String(obj["Description"] ?? obj["Schedule"] ?? obj["ScheduleName"] ?? ""),
         scheduled_in: "",
         scheduled_out: "",
@@ -157,8 +187,6 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         status_out: String(obj["StatusOut"] ?? obj["status_out"] ?? obj["statusout"] ?? ""),
       };
       
-      const schedIn = formatTime(obj["ScheduledClockIn"] ?? obj["scheduled_clock_in"] ?? obj["scheduledin"] ?? "");
-      const schedOut = formatTime(obj["ScheduledClockOut"] ?? obj["scheduled_clock_out"] ?? obj["scheduledout"] ?? "");
       if (schedIn) next["scheduled_in"] = schedIn;
       if (schedOut) next["scheduled_out"] = schedOut;
       if (schedIn && schedOut) {
