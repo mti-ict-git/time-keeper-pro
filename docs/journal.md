@@ -751,6 +751,30 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
 
+Tuesday, February 10, 2026 3:22:07 PM
+
+- Removed MTIUsersLastUpdate write logic from Orange→MTIUsers sync and CardDB→MTIUsers enrichment [backend/sync.ts, backend/scripts/sync_carddb_to_mtiusers.ts]
+- Removed /api/sync/changes endpoint and MTIUsersLastUpdate-based change fetching from backend [backend/routes/sync.ts]
+- Updated Admin Sync UI to show per-run row-level summaries from SyncLogs.detailsUpdated/detailsInserted instead of MTIUsersLastUpdate; removed global Changes tab [src/pages/admin/AdminSync.tsx]
+- Stopped applying MTIUsersLastUpdate-related schema files in db:apply-schema to avoid relying on that table [backend/scripts/apply_schema.ts]
+
+Verification:
+
+- npm run db:apply-schema executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 3:29:42 PM
+
+- Added OFFSET/FETCH-based pagination and optional with-changes filter to sync logs API [backend/routes/sync.ts]
+- Extended sync API client with paged logs shape and query parameters [src/lib/services/syncApi.ts]
+- Updated Admin Sync activity table to support pagination, show total runs, and toggle "show only runs with changes" [src/pages/admin/AdminSync.tsx]
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; only pre-existing warnings remain
+
 Tuesday, February 10, 2026 2:33:15 PM
 
 - Added updated_at timestamp column and auto-update trigger for MTIUsers [backend/schema/mtiusers_updated_at.sql]

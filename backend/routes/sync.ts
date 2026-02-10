@@ -52,17 +52,29 @@ async function saveLog(log: SyncLog): Promise<void> {
   );
 }
 
-async function fetchLogs(limit: number): Promise<SyncLog[]> {
+async function fetchLogs(limit: number, offset: number, withChangesOnly: boolean): Promise<{ rows: SyncLog[]; total: number }> {
   await ensureLogsTable();
   const pool = await getPool();
-  const req = pool.request();
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
-  req.input("limit", safeLimit);
-  const result = await req.query(
-    "SELECT TOP (@limit) timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted, runId FROM SyncLogs ORDER BY id DESC"
-  );
+  const safeOffset = Number.isFinite(offset) && offset >= 0 ? Math.floor(offset) : 0;
+
+  const whereClause = withChangesOnly ? "WHERE (updated + inserted) > 0" : "";
+  const countReq = pool.request();
+  const countResult = await countReq.query(`SELECT COUNT(*) AS cnt FROM SyncLogs ${whereClause}`);
+  const totalRow = countResult.recordset?.[0] as { cnt?: unknown } | undefined;
+  const total = Number(totalRow?.cnt ?? 0);
+
+  const dataReq = pool.request();
+  dataReq.input("limit", safeLimit);
+  dataReq.input("offset", safeOffset);
+  const baseQuery =
+    "SELECT timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted, runId FROM SyncLogs";
+  const filterQuery = withChangesOnly ? " WHERE (updated + inserted) > 0" : "";
+  const pagingQuery =
+    " ORDER BY id DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY";
+  const result = await dataReq.query(baseQuery + filterQuery + pagingQuery);
   const rows = result.recordset ?? [];
-  return rows.map((r: Record<string, unknown>) => {
+  const mapped = rows.map((r: Record<string, unknown>) => {
     const tsRaw = r["timestamp"];
     const ts = tsRaw instanceof Date ? tsRaw : new Date(String(tsRaw ?? ""));
     const total = Number(r["total"] ?? 0);
@@ -91,53 +103,8 @@ async function fetchLogs(limit: number): Promise<SyncLog[]> {
     const runId = runIdRaw === null || runIdRaw === undefined ? "" : String(runIdRaw);
     return { timestamp: ts, total, updated, inserted, unchanged, detailsUpdated, detailsInserted, success, error, runId };
   });
-}
 
-type SyncChange = {
-  id: number;
-  runId: string | null;
-  employeeId: string;
-  fieldName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  updatedAt: Date;
-};
-
-async function fetchChanges(runId: string | null, limit: number): Promise<SyncChange[]> {
-  const pool = await getPool();
-  const req = pool.request();
-  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 200;
-  req.input("limit", safeLimit);
-  let query =
-    "SELECT TOP (@limit) id, runId, employee_id, field_name, old_value, new_value, updated_at FROM MTIUsersLastUpdate";
-  if (runId && runId.trim().length > 0) {
-    query += " WHERE runId = @runId";
-    req.input("runId", runId);
-  }
-  query += " ORDER BY updated_at DESC, id DESC";
-  const result = await req.query(query);
-  const rows = result.recordset ?? [];
-  return rows.map((r: Record<string, unknown>) => {
-    const id = Number(r["id"] ?? 0);
-    const runIdVal = r["runId"];
-    const employeeId = String(r["employee_id"] ?? "");
-    const fieldName = String(r["field_name"] ?? "");
-    const oldValueRaw = r["old_value"];
-    const newValueRaw = r["new_value"];
-    const updatedAtRaw = r["updated_at"];
-    const updatedAt = updatedAtRaw instanceof Date ? updatedAtRaw : new Date(String(updatedAtRaw ?? ""));
-    return {
-      id,
-      runId: runIdVal === null || runIdVal === undefined ? null : String(runIdVal),
-      employeeId,
-      fieldName,
-      oldValue:
-        oldValueRaw === null || oldValueRaw === undefined ? null : String(oldValueRaw),
-      newValue:
-        newValueRaw === null || newValueRaw === undefined ? null : String(newValueRaw),
-      updatedAt,
-    };
-  });
+  return { rows: mapped, total };
 }
 
 async function loadSettings(): Promise<void> {
@@ -284,19 +251,19 @@ syncRouter.put("/config", async (req: Request, res: Response) => {
 });
 
 syncRouter.get("/logs", async (req: Request, res: Response) => {
-  const limitParam = Number(String(req.query.limit ?? "").trim() || "0");
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
-  const logs = await fetchLogs(limit);
-  res.json({ logs });
-});
+  const pageParam = Number(String(req.query.page ?? "").trim() || "0");
+  const pageSizeParam = Number(String(req.query.pageSize ?? "").trim() || "0");
+  const withChangesRaw = String(req.query.withChanges ?? "").toLowerCase();
 
-syncRouter.get("/changes", async (req: Request, res: Response) => {
-  const limitParam = Number(String(req.query.limit ?? "").trim() || "0");
-  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 200;
-  const runIdParamRaw = req.query.runId;
-  const runId = typeof runIdParamRaw === "string" ? runIdParamRaw : null;
-  const changes = await fetchChanges(runId, limit);
-  res.json({ changes });
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const pageSize = Number.isFinite(pageSizeParam) && pageSizeParam > 0 ? Math.floor(pageSizeParam) : 20;
+  const withChangesOnly = withChangesRaw === "true" || withChangesRaw === "1";
+
+  const offset = (page - 1) * pageSize;
+  const { rows, total } = await fetchLogs(pageSize, offset, withChangesOnly);
+  const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+
+  res.json({ logs: rows, page, pageSize, total, totalPages });
 });
 
 Promise.all([loadSettings(), ensureLogsTable()]).then(() => scheduleNext());

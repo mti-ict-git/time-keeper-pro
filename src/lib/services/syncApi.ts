@@ -9,27 +9,25 @@ export interface SyncStatus {
 }
 
 export interface SyncLog {
-  total: number;
-  updated: number;
-  inserted: number;
-  unchanged: number;
-  detailsUpdated: string[];
-  detailsInserted: string[];
-  timestamp: string;
-  success: boolean;
-  error?: string;
-  runId?: string;
-}
+	  total: number;
+	  updated: number;
+	  inserted: number;
+	  unchanged: number;
+	  detailsUpdated: string[];
+	  detailsInserted: string[];
+	  timestamp: string;
+	  success: boolean;
+	  error?: string;
+	  runId?: string;
+	}
 
-export interface SyncChange {
-  id: number;
-  runId: string | null;
-  employeeId: string;
-  fieldName: string;
-  oldValue: string | null;
-  newValue: string | null;
-  updatedAt: string;
-}
+export interface SyncLogPage {
+	  logs: SyncLog[];
+	  page: number;
+	  pageSize: number;
+	  total: number;
+	  totalPages: number;
+	}
 
 import { buildApiUrl } from "@/lib/config/api";
 
@@ -56,24 +54,28 @@ export async function updateSyncConfig(intervalMinutes: number, enabled: boolean
   return (await res.json()) as { intervalMinutes: number; enabled: boolean; nextRunAt: string | null };
 }
 
-export async function fetchSyncLogs(): Promise<SyncLog[]> {
-  const res = await fetch(buildApiUrl('sync/logs'), { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Failed to fetch sync logs: ${res.status}`);
-  const json = (await res.json()) as { logs: SyncLog[] };
-  return json.logs ?? [];
-}
+export async function fetchSyncLogs(params?: { page?: number; pageSize?: number; withChangesOnly?: boolean }): Promise<SyncLogPage> {
+	  const queryParts: string[] = [];
+	  if (params?.page && Number.isFinite(params.page) && params.page > 0) {
+	    queryParts.push(`page=${params.page}`);
+	  }
+	  if (params?.pageSize && Number.isFinite(params.pageSize) && params.pageSize > 0) {
+	    queryParts.push(`pageSize=${params.pageSize}`);
+	  }
+	  if (params?.withChangesOnly) {
+	    queryParts.push('withChanges=true');
+	  }
+	  const qs = queryParts.length ? `?${queryParts.join('&')}` : '';
+	  const res = await fetch(buildApiUrl(`sync/logs${qs}`), { headers: { Accept: 'application/json' } });
+	  if (!res.ok) throw new Error(`Failed to fetch sync logs: ${res.status}`);
+	  const json = (await res.json()) as SyncLogPage;
+	  return {
+	    logs: json.logs ?? [],
+	    page: json.page ?? 1,
+	    pageSize: json.pageSize ?? (params?.pageSize ?? 20),
+	    total: json.total ?? (json.logs?.length ?? 0),
+	    totalPages: json.totalPages ?? 1,
+	  };
+	}
 
-export async function fetchSyncChanges(params?: { runId?: string; limit?: number }): Promise<SyncChange[]> {
-  const queryParts: string[] = [];
-  if (params?.runId) {
-    queryParts.push(`runId=${encodeURIComponent(params.runId)}`);
-  }
-  if (params?.limit && Number.isFinite(params.limit) && params.limit > 0) {
-    queryParts.push(`limit=${params.limit}`);
-  }
-  const qs = queryParts.length ? `?${queryParts.join('&')}` : '';
-  const res = await fetch(buildApiUrl(`sync/changes${qs}`), { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`Failed to fetch sync changes: ${res.status}`);
-  const json = (await res.json()) as { changes: SyncChange[] };
-  return json.changes ?? [];
-}
+export {};

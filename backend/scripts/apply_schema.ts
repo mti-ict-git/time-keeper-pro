@@ -30,7 +30,11 @@ async function main(): Promise<void> {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const schemaDir = path.resolve(__dirname, "../schema");
-  const files = await listSqlFiles(schemaDir);
+  const files = (await listSqlFiles(schemaDir)).filter((filePath) => {
+    const name = path.basename(filePath).toLowerCase();
+    if (name.startsWith("mtiusers_lastupdate")) return false;
+    return true;
+  });
   if (files.length === 0) {
     console.log("No schema files found.");
     return;

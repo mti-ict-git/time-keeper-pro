@@ -1,56 +1,58 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { fetchSyncStatus, runSync, updateSyncConfig, fetchSyncLogs, fetchSyncChanges, SyncLog, SyncStatus, SyncChange } from '@/lib/services/syncApi';
+import { fetchSyncStatus, runSync, updateSyncConfig, fetchSyncLogs, SyncLog, SyncStatus, SyncLogPage } from '@/lib/services/syncApi';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCcw, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { RefreshCcw, Clock, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const AdminSync = () => {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [logs, setLogs] = useState<SyncLog[]>([]);
+  const [logPage, setLogPage] = useState<number>(1);
+  const [logPageSize] = useState<number>(20);
+  const [logTotal, setLogTotal] = useState<number>(0);
+  const [logTotalPages, setLogTotalPages] = useState<number>(1);
+  const [withChangesOnly, setWithChangesOnly] = useState<boolean>(false);
   const [interval, setInterval] = useState<number>(5);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [enabled, setEnabled] = useState<boolean>(true);
-  const [tab, setTab] = useState<'logs' | 'changes'>('logs');
   const [changesOpen, setChangesOpen] = useState(false);
-  const [changesLoading, setChangesLoading] = useState(false);
-  const [changesError, setChangesError] = useState('');
-  const [changes, setChanges] = useState<SyncChange[]>([]);
-  const [selectedRun, setSelectedRun] = useState<{ timestamp: string; runId?: string } | null>(null);
-  const [allChanges, setAllChanges] = useState<SyncChange[]>([]);
+  const [selectedRun, setSelectedRun] = useState<{ timestamp: string } | null>(null);
 
-  const load = async () => {
-    try {
-      const st = await fetchSyncStatus();
-      setStatus(st);
-      setInterval(st.intervalMinutes);
-      setEnabled(st.enabled);
-      const lg = await fetchSyncLogs();
-      setLogs(lg);
-      const cg = await fetchSyncChanges({ limit: 200 });
-      setAllChanges(cg);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
-    }
-  };
+  const load = useCallback(
+    async (page: number = 1, pageSize: number = logPageSize, filterWithChangesOnly: boolean = withChangesOnly) => {
+      try {
+        const st = await fetchSyncStatus();
+        setStatus(st);
+        setInterval(st.intervalMinutes);
+        setEnabled(st.enabled);
+        const lg: SyncLogPage = await fetchSyncLogs({ page, pageSize, withChangesOnly: filterWithChangesOnly });
+        setLogs(lg.logs);
+        setLogPage(lg.page);
+        setLogTotal(lg.total);
+        setLogTotalPages(lg.totalPages);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Unknown error');
+      }
+    },
+    [logPageSize, withChangesOnly]
+  );
 
   useEffect(() => {
-    load();
-  }, []);
+    void load(1, logPageSize, withChangesOnly);
+  }, [load, logPageSize, withChangesOnly]);
 
   const handleRun = async () => {
     setLoading(true);
     try {
-      const lr = await runSync();
-      if (lr) setLogs([lr]);
-      await load();
+      await runSync();
+      await load(logPage, logPageSize, withChangesOnly);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -62,7 +64,7 @@ const AdminSync = () => {
     setSaving(true);
     try {
       await updateSyncConfig(interval, enabled);
-      await load();
+      await load(logPage, logPageSize, withChangesOnly);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -70,30 +72,9 @@ const AdminSync = () => {
     }
   };
 
-  const handleViewChanges = async (log: SyncLog) => {
-    if (!log.runId || log.runId.trim().length === 0) {
-      setSelectedRun({ timestamp: log.timestamp, runId: '' });
-      setChanges([]);
-      setChangesError('This run was recorded before field-level tracking was enabled. Only summary counts are available.');
-      setChangesOpen(true);
-      return;
-    }
-    setSelectedRun({ timestamp: log.timestamp, runId: log.runId });
+  const handleViewChanges = (log: SyncLog) => {
+    setSelectedRun({ timestamp: log.timestamp });
     setChangesOpen(true);
-    setChangesLoading(true);
-    setChangesError('');
-    try {
-      const rows = await fetchSyncChanges({ runId: log.runId, limit: 200 });
-      setChanges(rows);
-      if (rows.length === 0) {
-        setChangesError('No field-level changes recorded for this run.');
-      }
-    } catch (e) {
-      setChanges([]);
-      setChangesError(e instanceof Error ? e.message : 'Unknown error');
-    } finally {
-      setChangesLoading(false);
-    }
   };
 
   const lastRun = status?.lastRun || null;
@@ -203,128 +184,126 @@ const AdminSync = () => {
           <CardTitle className="text-lg">Sync Activity</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs value={tab} onValueChange={(value) => setTab(value as 'logs' | 'changes')} className="w-full">
-            <TabsList className="mb-4">
-              <TabsTrigger value="logs">Logs</TabsTrigger>
-              <TabsTrigger value="changes">Changes</TabsTrigger>
-            </TabsList>
-            <TabsContent value="logs">
-              <div className="data-table-container">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Updated</TableHead>
-                      <TableHead>Inserted</TableHead>
-                      <TableHead>Unchanged</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Error</TableHead>
-                      <TableHead className="w-[120px]">Changes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {logs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground">No logs</TableCell>
-                      </TableRow>
-                    ) : (
-                      logs.map((log, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell className="font-mono text-sm">{new Date(log.timestamp).toLocaleString()}</TableCell>
-                          <TableCell>{log.total}</TableCell>
-                          <TableCell className="text-success">{log.updated}</TableCell>
-                          <TableCell className="text-success">{log.inserted}</TableCell>
-                          <TableCell className="text-muted-foreground">{log.unchanged}</TableCell>
-                          <TableCell>
-                            {log.success ? (
-                              <Badge variant="outline" className="bg-success/10 text-success">Success</Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-destructive/10 text-destructive">Failed</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="max-w-[320px] truncate text-muted-foreground">
-                            {!log.success && log.error ? log.error : ''}
-                          </TableCell>
-                          <TableCell>
-                            {log.updated + log.inserted > 0 ? (
-                              log.runId && log.runId.trim().length > 0 ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="rounded-xl text-xs"
-                                  onClick={() => handleViewChanges(log)}
-                                >
-                                  View changes
-                                </Button>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">Not tracked</span>
-                              )
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No changes</span>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </TabsContent>
-            <TabsContent value="changes">
-              <div className="data-table-container">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Employee ID</TableHead>
-                      <TableHead>Field</TableHead>
-                      <TableHead>Old Value</TableHead>
-                      <TableHead>New Value</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {allChanges.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          No field-level changes recorded.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      allChanges.map((change) => (
-                        <TableRow key={change.id}>
-                          <TableCell className="font-mono text-xs">
-                            {new Date(change.updatedAt).toLocaleString()}
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">{change.employeeId}</TableCell>
-                          <TableCell className="text-sm">{change.fieldName}</TableCell>
-                          <TableCell
-                            className="text-xs text-muted-foreground max-w-[200px] truncate"
-                            title={change.oldValue ?? ''}
+          <div className="flex items-center justify-between mb-3 gap-3">
+            <div className="text-xs text-muted-foreground">
+              Page {logPage} of {logTotalPages} · {logTotal} runs
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3 rounded border-muted-foreground/40"
+                  checked={withChangesOnly}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setWithChangesOnly(next);
+                    await load(1, logPageSize, next);
+                  }}
+                />
+                Show only runs with changes
+              </label>
+            </div>
+          </div>
+          <div className="data-table-container">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Updated</TableHead>
+                  <TableHead>Inserted</TableHead>
+                  <TableHead>Unchanged</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Error</TableHead>
+                  <TableHead className="w-[140px]">Details</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground">No logs</TableCell>
+                  </TableRow>
+                ) : (
+                  logs.map((log, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-mono text-sm">{new Date(log.timestamp).toLocaleString()}</TableCell>
+                      <TableCell>{log.total}</TableCell>
+                      <TableCell className="text-success">{log.updated}</TableCell>
+                      <TableCell className="text-success">{log.inserted}</TableCell>
+                      <TableCell className="text-muted-foreground">{log.unchanged}</TableCell>
+                      <TableCell>
+                        {log.success ? (
+                          <Badge variant="outline" className="bg-success/10 text-success">Success</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive">Failed</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-[320px] truncate text-muted-foreground">
+                        {!log.success && log.error ? log.error : ''}
+                      </TableCell>
+                      <TableCell>
+                        {log.updated + log.inserted > 0 ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-xl text-xs"
+                            onClick={() => handleViewChanges(log)}
                           >
-                            {change.oldValue ?? '—'}
-                          </TableCell>
-                          <TableCell
-                            className="text-xs max-w-[200px] truncate"
-                            title={change.newValue ?? ''}
-                          >
-                            {change.newValue ?? '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
+                            View details
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No changes</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+              <div>
+                Showing {logs.length} of {logTotal} runs
               </div>
-            </TabsContent>
-          </Tabs>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 rounded-full"
+                  disabled={logPage <= 1}
+                  onClick={async () => {
+                    const nextPage = Math.max(1, logPage - 1);
+                    await load(nextPage, logPageSize, withChangesOnly);
+                  }}
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </Button>
+                <span>
+                  Page {logPage} / {logTotalPages}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 rounded-full"
+                  disabled={logPage >= logTotalPages}
+                  onClick={async () => {
+                    const nextPage = Math.min(logTotalPages, logPage + 1);
+                    await load(nextPage, logPageSize, withChangesOnly);
+                  }}
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       <Dialog open={changesOpen} onOpenChange={setChangesOpen}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-auto">
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-auto">
           <DialogHeader>
-            <DialogTitle>Field Changes</DialogTitle>
+            <DialogTitle>Run Details</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 mb-4">
             <div className="text-sm text-muted-foreground">
@@ -336,47 +315,48 @@ const AdminSync = () => {
                 'Run details not available.'
               )}
             </div>
-            {changesLoading && (
-              <div className="text-sm text-muted-foreground">Loading changes…</div>
-            )}
-            {changesError && !changesLoading && (
-              <div className="text-sm text-destructive">{changesError}</div>
-            )}
           </div>
           <div className="data-table-container">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Employee ID</TableHead>
-                  <TableHead>Field</TableHead>
-                  <TableHead>Old Value</TableHead>
-                  <TableHead>New Value</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Summary</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(!changesLoading && changes.length === 0 && !changesError) && (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground">
-                      No field-level changes recorded.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {changes.map((change) => (
-                  <TableRow key={change.id}>
-                    <TableCell className="font-mono text-xs">
-                      {new Date(change.updatedAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">{change.employeeId}</TableCell>
-                    <TableCell className="text-sm">{change.fieldName}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate" title={change.oldValue ?? ''}>
-                      {change.oldValue ?? '—'}
-                    </TableCell>
-                    <TableCell className="text-xs max-w-[200px] truncate" title={change.newValue ?? ''}>
-                      {change.newValue ?? '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {(() => {
+                  const log = selectedRun
+                    ? logs.find((l) => l.timestamp === selectedRun.timestamp) ?? null
+                    : null;
+                  const updatedDetails = log?.detailsUpdated ?? [];
+                  const insertedDetails = log?.detailsInserted ?? [];
+                  if (updatedDetails.length === 0 && insertedDetails.length === 0) {
+                    return (
+                      <TableRow>
+                        <TableCell colSpan={2} className="text-center text-muted-foreground">
+                          No row-level details recorded for this run.
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  return (
+                    <>
+                      {updatedDetails.map((text, idx) => (
+                        <TableRow key={`u-${idx}`}>
+                          <TableCell className="text-xs text-success">Updated</TableCell>
+                          <TableCell className="text-xs font-mono">{text}</TableCell>
+                        </TableRow>
+                      ))}
+                      {insertedDetails.map((text, idx) => (
+                        <TableRow key={`i-${idx}`}>
+                          <TableCell className="text-xs text-success">Inserted</TableCell>
+                          <TableCell className="text-xs font-mono">{text}</TableCell>
+                        </TableRow>
+                      ))}
+                    </>
+                  );
+                })()}
               </TableBody>
             </Table>
           </div>
