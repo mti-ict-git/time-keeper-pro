@@ -663,6 +663,10 @@ Verification:
 
 - Made main content area full width by replacing Tailwind container with w-full max-w-none in MainLayout; attendance table now uses full viewport width, reducing horizontal scroll
 
+2026-02-10 20:26:54 WITA
+
+- Installed project dependencies locally to fix "concurrently: command not found" when running npm run dev:full; dev:full now runs FE and BE together
+
 2026-02-05 23:28:55 WITA
 
 Dockerized local development environment.
@@ -699,6 +703,43 @@ Verification:
 - npm run db:apply-schema executed successfully
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
+2026-02-10 16:08:47 UTC
+
+- Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas
+- Applied schemas via npm run db:apply-schema (success)
+
+Verification:
+
+- npx tsc --noEmit executed successfully
+- npm run lint executed; only existing warnings present
+2026-02-10 16:27:54 UTC
+
+- Executed Phase 2: updated sync service to append ScheduleChangeLog on MTIUsers changes
+- Modified backend/sync.ts to write StaffNo, TimeInNew, TimeOutNew, NextDayNew, SourceHash within transaction
+
+Verification:
+
+- npx tsc --noEmit executed successfully
+- npm run lint executed; only existing warnings present
+2026-02-10 16:33:03 UTC
+
+- Executed Phase 3: Python job uses AttendanceScheduleLock and MTIUsers
+- Updated backend/attendance_report_modv7.py to lock schedules per shift date and classify with windows
+- Implemented Missing Clock Out generation after ScheduledOut + 8h; excluded from mcg_clocking_tbl
+
+Verification:
+
+- npx tsc --noEmit executed successfully
+- npm run lint executed; only existing warnings present
+2026-02-10 14:05:11 UTC
+
+- Added stabilization plan in docs/plan.md: MTIUsers-centric locking and smart cutover
+- Defined Phase 1 data model: AttendanceScheduleLock and ScheduleChangeLog tables
+
+Verification:
+
+- npx tsc --noEmit executed successfully
+- npm run lint executed; 7 existing warnings unrelated to this change
 
 Tuesday, February 10, 2026 1:04:20 PM
 

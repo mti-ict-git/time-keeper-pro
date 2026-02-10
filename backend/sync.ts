@@ -243,6 +243,15 @@ export async function runScheduleSync(): Promise<SyncResult> {
         r2.input("time_out", sql.NVarChar, s(row.time_out));
         r2.input("next_day", sql.NVarChar, s(row.next_day));
         await r2.query(q);
+        const logReq = tx.request();
+        logReq.input("StaffNo", sql.NVarChar, row.employee_id);
+        logReq.input("TimeInNew", sql.NVarChar, s(row.time_in));
+        logReq.input("TimeOutNew", sql.NVarChar, s(row.time_out));
+        logReq.input("NextDayNew", sql.NVarChar, s(row.next_day));
+        logReq.input("SourceHash", sql.NVarChar, newHash);
+        await logReq.query(
+          "INSERT INTO dbo.ScheduleChangeLog (StaffNo, TimeInNew, TimeOutNew, NextDayNew, SourceHash) VALUES (@StaffNo, @TimeInNew, @TimeOutNew, CASE WHEN LOWER(LTRIM(RTRIM(@NextDayNew))) IN ('y','yes','true','1') THEN 1 ELSE 0 END, @SourceHash)"
+        );
         updated += 1;
         updatedDetails.push(`${row.employee_id} | ${s(row.employee_name)} | ${s(row.day_type)} | ${s(row.time_in)}-${s(row.time_out)} | ${s(row.next_day)}`);
       } else {
@@ -301,6 +310,15 @@ export async function runScheduleSync(): Promise<SyncResult> {
         r2.input("time_out", sql.NVarChar, s(row.time_out));
         r2.input("next_day", sql.NVarChar, s(row.next_day));
         await r2.query(q);
+        const logReq = tx.request();
+        logReq.input("StaffNo", sql.NVarChar, row.employee_id);
+        logReq.input("TimeInNew", sql.NVarChar, s(row.time_in));
+        logReq.input("TimeOutNew", sql.NVarChar, s(row.time_out));
+        logReq.input("NextDayNew", sql.NVarChar, s(row.next_day));
+        logReq.input("SourceHash", sql.NVarChar, newHash);
+        await logReq.query(
+          "INSERT INTO dbo.ScheduleChangeLog (StaffNo, TimeInNew, TimeOutNew, NextDayNew, SourceHash) VALUES (@StaffNo, @TimeInNew, @TimeOutNew, CASE WHEN LOWER(LTRIM(RTRIM(@NextDayNew))) IN ('y','yes','true','1') THEN 1 ELSE 0 END, @SourceHash)"
+        );
         inserted += 1;
         insertedDetails.push(`${row.employee_id} | ${s(row.employee_name)} | ${s(row.day_type)} | ${s(row.time_in)}-${s(row.time_out)} | ${s(row.next_day)}`);
       }
