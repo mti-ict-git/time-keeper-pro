@@ -96,6 +96,7 @@ export type SyncResult = {
   detailsUpdated: string[];
   detailsInserted: string[];
   timestamp: Date;
+  runId: string;
 };
 
 export async function runScheduleSync(): Promise<SyncResult> {
@@ -159,6 +160,8 @@ export async function runScheduleSync(): Promise<SyncResult> {
   let updated = 0;
   let inserted = 0;
 
+  const runId = crypto.randomUUID();
+
   const tx = target.transaction();
   await tx.begin();
   try {
@@ -192,8 +195,11 @@ export async function runScheduleSync(): Promise<SyncResult> {
 
       const req = tx.request();
       req.input("employee_id", sql.NVarChar, row.employee_id);
-      const existsRes = await req.query("SELECT COUNT(1) AS c FROM [dbo].[MTIUsers] WHERE employee_id = @employee_id");
-      const exists = Number((existsRes.recordset?.[0] as { c?: unknown })?.c || 0) > 0;
+      const existsRes = await req.query(
+        "SELECT employee_name, gender, division, department, section, supervisor_id, supervisor_name, position_title, grade_interval, phone, day_type, description, CONVERT(varchar(5), time_in, 108) AS time_in, CONVERT(varchar(5), time_out, 108) AS time_out, next_day FROM [dbo].[MTIUsers] WHERE employee_id = @employee_id"
+      );
+      const existsRow = existsRes.recordset?.[0] as Record<string, unknown> | undefined;
+      const exists = Boolean(existsRow);
 
       if (oldHash === newHash) {
         continue;
@@ -237,6 +243,38 @@ export async function runScheduleSync(): Promise<SyncResult> {
         r2.input("time_out", sql.NVarChar, s(row.time_out));
         r2.input("next_day", sql.NVarChar, s(row.next_day));
         await r2.query(q);
+        if (existsRow) {
+          const fields: Array<{ fieldName: string; oldValue: string; newValue: string }> = [
+            { fieldName: "employee_name", oldValue: s(existsRow["employee_name"]), newValue: s(row.employee_name) },
+            { fieldName: "gender", oldValue: s(existsRow["gender"]), newValue: s(row.gender) },
+            { fieldName: "division", oldValue: s(existsRow["division"]), newValue: s(row.division) },
+            { fieldName: "department", oldValue: s(existsRow["department"]), newValue: s(row.department) },
+            { fieldName: "section", oldValue: s(existsRow["section"]), newValue: s(row.section) },
+            { fieldName: "supervisor_id", oldValue: s(existsRow["supervisor_id"]), newValue: s(row.supervisor_id) },
+            { fieldName: "supervisor_name", oldValue: s(existsRow["supervisor_name"]), newValue: s(row.supervisor_name) },
+            { fieldName: "position_title", oldValue: s(existsRow["position_title"]), newValue: s(row.position_title) },
+            { fieldName: "grade_interval", oldValue: s(existsRow["grade_interval"]), newValue: s(row.grade_interval) },
+            { fieldName: "phone", oldValue: s(existsRow["phone"]), newValue: phone },
+            { fieldName: "day_type", oldValue: s(existsRow["day_type"]), newValue: s(row.day_type) },
+            { fieldName: "description", oldValue: s(existsRow["description"]), newValue: s(row.description) },
+            { fieldName: "time_in", oldValue: s(existsRow["time_in"]), newValue: s(row.time_in) },
+            { fieldName: "time_out", oldValue: s(existsRow["time_out"]), newValue: s(row.time_out) },
+            { fieldName: "next_day", oldValue: s(existsRow["next_day"]), newValue: s(row.next_day) },
+          ];
+          for (const f of fields) {
+            if (f.oldValue !== f.newValue) {
+              const auditReq = tx.request();
+              auditReq.input("runId", sql.UniqueIdentifier, runId);
+              auditReq.input("employee_id", sql.NVarChar, row.employee_id);
+              auditReq.input("field_name", sql.NVarChar, f.fieldName);
+              auditReq.input("old_value", sql.NVarChar, f.oldValue);
+              auditReq.input("new_value", sql.NVarChar, f.newValue);
+              await auditReq.query(
+                "INSERT INTO [dbo].[MTIUsersLastUpdate] (runId, employee_id, field_name, old_value, new_value) VALUES (@runId, @employee_id, @field_name, @old_value, @new_value)"
+              );
+            }
+          }
+        }
         updated += 1;
         updatedDetails.push(`${row.employee_id} | ${s(row.employee_name)} | ${s(row.day_type)} | ${s(row.time_in)}-${s(row.time_out)} | ${s(row.next_day)}`);
       } else {
@@ -308,5 +346,5 @@ export async function runScheduleSync(): Promise<SyncResult> {
   const total = orangeRows.length;
   const unchanged = total - updated - inserted;
   const timestamp = new Date();
-  return { total, updated, inserted, unchanged, detailsUpdated: updatedDetails, detailsInserted: insertedDetails, timestamp };
+  return { total, updated, inserted, unchanged, detailsUpdated: updatedDetails, detailsInserted: insertedDetails, timestamp, runId };
 }

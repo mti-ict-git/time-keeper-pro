@@ -70,9 +70,11 @@ async function main(): Promise<void> {
 
       const checkReq = tx.request();
       checkReq.input("employee_id", sql.NVarChar, staffNo);
-      const existsRes = await checkReq.query("SELECT COUNT(1) AS c FROM [dbo].[MTIUsers] WHERE employee_id = @employee_id");
-      const exists = Number((existsRes.recordset?.[0] as { c?: unknown })?.c || 0) > 0;
-      if (!exists) continue;
+      const existsRes = await checkReq.query(
+        "SELECT CardNo, AccessLevel, Name, FirstName, LastName, StaffNo FROM [dbo].[MTIUsers] WHERE employee_id = @employee_id"
+      );
+      const existsRow = existsRes.recordset?.[0] as Record<string, unknown> | undefined;
+      if (!existsRow) continue;
       matched += 1;
 
       const upd = tx.request();
@@ -86,6 +88,26 @@ async function main(): Promise<void> {
       await upd.query(
         "UPDATE [dbo].[MTIUsers] SET [CardNo]=@CardNo,[AccessLevel]=@AccessLevel,[Name]=@Name,[FirstName]=@FirstName,[LastName]=@LastName,[StaffNo]=@StaffNo WHERE employee_id=@employee_id"
       );
+      const fields: Array<{ fieldName: string; oldValue: string; newValue: string }> = [
+        { fieldName: "CardNo", oldValue: clean(existsRow["CardNo"]), newValue: cardNo ?? "" },
+        { fieldName: "AccessLevel", oldValue: clean(existsRow["AccessLevel"]), newValue: accessLevel ?? "" },
+        { fieldName: "Name", oldValue: clean(existsRow["Name"]), newValue: name ?? "" },
+        { fieldName: "FirstName", oldValue: clean(existsRow["FirstName"]), newValue: firstName ?? "" },
+        { fieldName: "LastName", oldValue: clean(existsRow["LastName"]), newValue: lastName ?? "" },
+        { fieldName: "StaffNo", oldValue: clean(existsRow["StaffNo"]), newValue: staffNo },
+      ];
+      for (const f of fields) {
+        if (f.oldValue !== f.newValue) {
+          const auditReq = tx.request();
+          auditReq.input("employee_id", sql.NVarChar, staffNo);
+          auditReq.input("field_name", sql.NVarChar, f.fieldName);
+          auditReq.input("old_value", sql.NVarChar, f.oldValue);
+          auditReq.input("new_value", sql.NVarChar, f.newValue);
+          await auditReq.query(
+            "INSERT INTO [dbo].[MTIUsersLastUpdate] (employee_id, field_name, old_value, new_value) VALUES (@employee_id, @field_name, @old_value, @new_value)"
+          );
+        }
+      }
       updated += 1;
     }
     await tx.commit();

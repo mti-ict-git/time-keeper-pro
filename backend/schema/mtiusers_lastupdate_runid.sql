@@ -1,0 +1,5 @@
+IF COL_LENGTH('dbo.MTIUsersLastUpdate', 'runId') IS NULL
+BEGIN
+  ALTER TABLE MTIUsersLastUpdate ADD runId UNIQUEIDENTIFIER NULL;
+END;
+

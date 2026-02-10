@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -371,7 +371,7 @@ export const SchedulingDBTable = () => {
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
-              <>
+              <Fragment key={headerGroup.id}>
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
                     <TableHead key={header.id} className="whitespace-nowrap">
@@ -386,7 +386,7 @@ export const SchedulingDBTable = () => {
                     </TableHead>
                   ))}
                 </TableRow>
-              </>
+              </Fragment>
             ))}
           </TableHeader>
           <TableBody>

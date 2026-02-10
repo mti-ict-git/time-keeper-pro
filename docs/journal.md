@@ -533,6 +533,16 @@ Verification:
 
 2026-02-06 10:53:52 WITA
 
+2026-02-09 08:16:47 WITA
+
+- Fixed React key warning in SchedulingDBTable header rendering by wrapping headerGroups in Fragment with a stable key and importing Fragment from react
+- Added typed debug_attendance_case.ts helper to inspect MTI230143 attendance aggregation without using any types
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; no new errors (existing warnings remain)
+
 - Added Admin Users page and navigation item; lists Users from backend /api/users with search
 - Implemented LDAP authentication via backend /api/auth/login using ldapts and wired AdminLogin to call it
 
@@ -677,3 +687,76 @@ Verification:
 
 - npx tsc --noEmit executed successfully
 - npm run lint executed successfully
+
+Tuesday, February 10, 2026 12:51:14 PM
+
+- Added MTIUsersLastUpdate schema [backend/schema/mtiusers_lastupdate.sql] and applied via npm run db:apply-schema
+- Extended Orange→MTIUsers sync [backend/sync.ts] to insert MTIUsersLastUpdate rows per changed field when an existing employee row is updated
+- Extended CardDB→MTIUsers enrichment script [backend/scripts/sync_carddb_to_mtiusers.ts] to insert MTIUsersLastUpdate rows for changed card/access fields
+
+Verification:
+
+- npm run db:apply-schema executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 1:04:20 PM
+
+- Linked SyncLogs with MTIUsersLastUpdate via runId columns [backend/schema/sync_logs_runid.sql, backend/schema/mtiusers_lastupdate_runid.sql]
+- Updated sync scheduler to return runId and expose /api/sync/changes for field-level audit [backend/sync.ts, backend/routes/sync.ts]
+- Added Admin Sync UI to view per-run field changes from MTIUsersLastUpdate with a Changes button in logs table [src/lib/services/syncApi.ts, src/pages/admin/AdminSync.tsx]
+
+Verification:
+
+- npm run db:apply-schema executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 1:12:31 PM
+
+- Added Logs/Changes tabs to Admin Sync page and wired Changes tab to MTIUsersLastUpdate data via /api/sync/changes [src/pages/admin/AdminSync.tsx]
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 1:59:00 PM
+
+- Clarified Admin Sync field-changes dialog message for legacy logs without runId [src/pages/admin/AdminSync.tsx]
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 2:09:08 PM
+
+- Updated Admin Sync logs table to only show View changes button when runId is present; legacy logs without field tracking now show Not tracked instead [src/pages/admin/AdminSync.tsx]
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 2:40:19 PM
+
+- Added debug script to inspect SyncLogs.runId and MTIUsersLastUpdate contents [backend/scripts/debug_sync_audit.ts]
+- Extended one-off sync script to print runId from runScheduleSync for verification [backend/scripts/run_sync_once.ts]
+
+Verification:
+
+- npx tsx backend/scripts/debug_sync_audit.ts executed successfully; confirmed existing SyncLogs rows have runId = NULL and MTIUsersLastUpdate is currently empty
+- npx tsx backend/scripts/run_sync_once.ts executed successfully; confirmed runScheduleSync returns a non-empty runId
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+Tuesday, February 10, 2026 2:33:15 PM
+
+- Added updated_at timestamp column and auto-update trigger for MTIUsers [backend/schema/mtiusers_updated_at.sql]
+
+Verification:
+
+- npm run db:apply-schema executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change

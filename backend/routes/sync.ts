@@ -29,7 +29,7 @@ async function ensureLogsTable(): Promise<void> {
   await pool
     .request()
     .query(
-      "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SyncLogs') BEGIN CREATE TABLE SyncLogs (id INT IDENTITY(1,1) NOT NULL PRIMARY KEY, timestamp DATETIME NOT NULL DEFAULT(GETDATE()), total INT NOT NULL, updated INT NOT NULL, inserted INT NOT NULL, unchanged INT NOT NULL, success BIT NOT NULL, error NVARCHAR(MAX) NULL, detailsUpdated NVARCHAR(MAX) NULL, detailsInserted NVARCHAR(MAX) NULL) END"
+      "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SyncLogs') BEGIN CREATE TABLE SyncLogs (id INT IDENTITY(1,1) NOT NULL PRIMARY KEY, timestamp DATETIME NOT NULL DEFAULT(GETDATE()), total INT NOT NULL, updated INT NOT NULL, inserted INT NOT NULL, unchanged INT NOT NULL, success BIT NOT NULL, error NVARCHAR(MAX) NULL, detailsUpdated NVARCHAR(MAX) NULL, detailsInserted NVARCHAR(MAX) NULL, runId UNIQUEIDENTIFIER NULL) END"
     );
 }
 
@@ -46,8 +46,9 @@ async function saveLog(log: SyncLog): Promise<void> {
   req.input("error", log.error ?? null);
   req.input("detailsUpdated", JSON.stringify(log.detailsUpdated));
   req.input("detailsInserted", JSON.stringify(log.detailsInserted));
+  req.input("runId", log.runId);
   await req.query(
-    "INSERT INTO SyncLogs (timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted) VALUES (@timestamp, @total, @updated, @inserted, @unchanged, @success, @error, @detailsUpdated, @detailsInserted)"
+    "INSERT INTO SyncLogs (timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted, runId) VALUES (@timestamp, @total, @updated, @inserted, @unchanged, @success, @error, @detailsUpdated, @detailsInserted, @runId)"
   );
 }
 
@@ -58,7 +59,7 @@ async function fetchLogs(limit: number): Promise<SyncLog[]> {
   const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
   req.input("limit", safeLimit);
   const result = await req.query(
-    "SELECT TOP (@limit) timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted FROM SyncLogs ORDER BY id DESC"
+    "SELECT TOP (@limit) timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted, runId FROM SyncLogs ORDER BY id DESC"
   );
   const rows = result.recordset ?? [];
   return rows.map((r: Record<string, unknown>) => {
@@ -74,6 +75,7 @@ async function fetchLogs(limit: number): Promise<SyncLog[]> {
     const error = errRaw === null || errRaw === undefined ? undefined : String(errRaw);
     const du = r["detailsUpdated"];
     const di = r["detailsInserted"];
+    const runIdRaw = r["runId"];
     let detailsUpdated: string[] = [];
     let detailsInserted: string[] = [];
     try {
@@ -86,7 +88,55 @@ async function fetchLogs(limit: number): Promise<SyncLog[]> {
     } catch {
       detailsInserted = [];
     }
-    return { timestamp: ts, total, updated, inserted, unchanged, detailsUpdated, detailsInserted, success, error };
+    const runId = runIdRaw === null || runIdRaw === undefined ? "" : String(runIdRaw);
+    return { timestamp: ts, total, updated, inserted, unchanged, detailsUpdated, detailsInserted, success, error, runId };
+  });
+}
+
+type SyncChange = {
+  id: number;
+  runId: string | null;
+  employeeId: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  updatedAt: Date;
+};
+
+async function fetchChanges(runId: string | null, limit: number): Promise<SyncChange[]> {
+  const pool = await getPool();
+  const req = pool.request();
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 200;
+  req.input("limit", safeLimit);
+  let query =
+    "SELECT TOP (@limit) id, runId, employee_id, field_name, old_value, new_value, updated_at FROM MTIUsersLastUpdate";
+  if (runId && runId.trim().length > 0) {
+    query += " WHERE runId = @runId";
+    req.input("runId", runId);
+  }
+  query += " ORDER BY updated_at DESC, id DESC";
+  const result = await req.query(query);
+  const rows = result.recordset ?? [];
+  return rows.map((r: Record<string, unknown>) => {
+    const id = Number(r["id"] ?? 0);
+    const runIdVal = r["runId"];
+    const employeeId = String(r["employee_id"] ?? "");
+    const fieldName = String(r["field_name"] ?? "");
+    const oldValueRaw = r["old_value"];
+    const newValueRaw = r["new_value"];
+    const updatedAtRaw = r["updated_at"];
+    const updatedAt = updatedAtRaw instanceof Date ? updatedAtRaw : new Date(String(updatedAtRaw ?? ""));
+    return {
+      id,
+      runId: runIdVal === null || runIdVal === undefined ? null : String(runIdVal),
+      employeeId,
+      fieldName,
+      oldValue:
+        oldValueRaw === null || oldValueRaw === undefined ? null : String(oldValueRaw),
+      newValue:
+        newValueRaw === null || newValueRaw === undefined ? null : String(newValueRaw),
+      updatedAt,
+    };
   });
 }
 
@@ -190,6 +240,7 @@ async function runNow() {
       detailsUpdated: [],
       detailsInserted: [],
       timestamp: new Date(),
+      runId: "",
       success: false,
       error: message,
     };
@@ -237,6 +288,15 @@ syncRouter.get("/logs", async (req: Request, res: Response) => {
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
   const logs = await fetchLogs(limit);
   res.json({ logs });
+});
+
+syncRouter.get("/changes", async (req: Request, res: Response) => {
+  const limitParam = Number(String(req.query.limit ?? "").trim() || "0");
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 200;
+  const runIdParamRaw = req.query.runId;
+  const runId = typeof runIdParamRaw === "string" ? runIdParamRaw : null;
+  const changes = await fetchChanges(runId, limit);
+  res.json({ changes });
 });
 
 Promise.all([loadSettings(), ensureLogsTable()]).then(() => scheduleNext());

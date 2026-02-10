@@ -16,24 +16,39 @@ async function main() {
       ORDER BY TrDateTime ASC
     `);
     
-    const rows = res.recordset;
+    const rows = res.recordset as Array<{
+      TrDate: unknown;
+      TrDateTime: unknown;
+      ClockEvent: string;
+      ScheduledClockIn: unknown;
+      ScheduledClockOut: unknown;
+      StaffNo: string;
+    }>;
     console.log(`\n=== Raw Logs for ${staffNo} ===`);
-    rows.forEach((r: any) => {
+    rows.forEach((r) => {
       console.log(`${formatDate(r.TrDate)} ${formatTime(r.TrDateTime)} | Event: ${r.ClockEvent} | Sched: ${formatTime(r.ScheduledClockIn)}-${formatTime(r.ScheduledClockOut)}`);
     });
 
     console.log(`\n=== Aggregation Logic Simulation ===`);
-    const agg = new Map<string, any>();
+    const agg = new Map<
+      string,
+      {
+        date: string;
+        actual_in: string;
+        actual_out: string;
+        scheduled_in: string;
+        scheduled_out: string;
+      }
+    >();
 
     for (const r of rows) {
-      const obj = r as any;
-      const staff = obj.StaffNo;
-      const dateRaw = obj.TrDate;
-      const dtRaw = obj.TrDateTime;
-      const ev = String(obj.ClockEvent || "").toLowerCase();
+      const staff = r.StaffNo;
+      const dateRaw = r.TrDate;
+      const dtRaw = r.TrDateTime;
+      const ev = String(r.ClockEvent || "").toLowerCase();
       
-      const schedIn = formatTime(obj.ScheduledClockIn);
-      const schedOut = formatTime(obj.ScheduledClockOut);
+      const schedIn = formatTime(r.ScheduledClockIn);
+      const schedOut = formatTime(r.ScheduledClockOut);
       
       let effectiveDateStr = formatDate(dateRaw);
       let shifted = false;
@@ -62,7 +77,7 @@ async function main() {
 
       const key = `${staff}|${effectiveDateStr}`;
       const prev = agg.get(key);
-      const next: any = prev ?? {
+      const next = prev ?? {
         date: effectiveDateStr,
         actual_in: "",
         actual_out: "",

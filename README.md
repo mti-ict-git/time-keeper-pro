@@ -78,3 +78,4 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 - Time Scheduling uses real data from backend (/api/scheduling/employees) for stats and organization breakdown
 - In Admin Schedules, clicking Employees opens a filtered list of users
 - Employees count opens a modal with filtered users and CSV export
+- MTIUsers sync tracks field-level changes in MTIUsersLastUpdate table for both Orange→MTIUsers and CardDB→MTIUsers enrichment, allowing estimation of when specific values were last updated

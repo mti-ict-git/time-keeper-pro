@@ -10,6 +10,7 @@ BEGIN
     success BIT NOT NULL,
     error NVARCHAR(MAX) NULL,
     detailsUpdated NVARCHAR(MAX) NULL,
-    detailsInserted NVARCHAR(MAX) NULL
+    detailsInserted NVARCHAR(MAX) NULL,
+    runId UNIQUEIDENTIFIER NULL
   )
 END

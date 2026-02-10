@@ -1,0 +1,5 @@
+IF COL_LENGTH('dbo.SyncLogs', 'runId') IS NULL
+BEGIN
+  ALTER TABLE SyncLogs ADD runId UNIQUEIDENTIFIER NULL;
+END;
+
