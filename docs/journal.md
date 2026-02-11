@@ -703,6 +703,37 @@ Verification:
 - npm run db:apply-schema executed successfully
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
+
+2026-02-11 10:56:54 WITA
+
+- Updated attendance_report_modv7 schedule locking to follow Smart Cutover and locked NextDay overnight handling
+- Made clock-in/clock-out windows configurable via env and used consistently for classification and Missing Clock Out generation
+- Enforced tblAttendanceReport idempotency using StaffNo + TrDateTime (no duplicates across reclassification)
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+2026-02-11 11:14:39 WITA
+
+- Backfilled AttendanceScheduleLock creation using first scan per staff per day in modv7 run window
+
+Verification:
+
+- python -m py_compile backend/attendance_report_modv7.py executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+2026-02-11 11:21:28 WITA
+
+- Added strict dry-run mode for modv7 to generate report without DB writes
+
+Verification:
+
+- python -m py_compile backend/attendance_report_modv7.py executed successfully
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
 2026-02-10 16:08:47 UTC
 
 - Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas

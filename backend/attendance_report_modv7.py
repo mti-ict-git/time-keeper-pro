@@ -33,6 +33,7 @@ def parse_arguments():
     parser.add_argument('--insert-att', action='store_true', help='Flag to insert data into tblAttendanceReport')
     parser.add_argument('--force-replace', action='store_true', help='Force replace existing records in database tables')
     parser.add_argument('--use-filo', action='store_true', help='Use First In Last Out logic (optional)')
+    parser.add_argument('--dry-run', action='store_true', help='Generate report without writing to any DB tables')
     parser.add_argument('--date', help='Specific date for attendance report (YYYY-MM-DD)')
     parser.add_argument('--start-date', help='Start date for attendance report (YYYY-MM-DD)')
     parser.add_argument('--end-date', help='End date for attendance report (YYYY-MM-DD)')
@@ -43,6 +44,23 @@ def parse_arguments():
 # 2. CONFIG / CONSTANTS
 # --------------------------------------------------------------------------
 def get_config():
+    def _env_int(name, default_val):
+        raw = os.getenv(name)
+        if raw is None:
+            return default_val
+        s = str(raw).strip()
+        if s == "":
+            return default_val
+        try:
+            return int(s)
+        except ValueError:
+            return default_val
+
+    clock_in_early_hours = _env_int('CLOCK_IN_EARLY_HOURS', 5)
+    clock_in_late_minutes = _env_int('CLOCK_IN_LATE_MINUTES', 60)
+    clock_out_early_minutes = _env_int('CLOCK_OUT_EARLY_MINUTES', 60)
+    clock_out_late_hours = _env_int('CLOCK_OUT_LATE_HOURS', 8)
+
     config = {
         'conn_str_data_db': {
             'server': '10.60.10.47',
@@ -76,8 +94,13 @@ def get_config():
         # Set manual working hours to None if you want dynamic working hours.
         'MANUAL_TIME_IN': None,
         'MANUAL_TIME_OUT': None,
-        # Tolerance in seconds for determining Clock In/Out events (e.g., 5 hours for clock in)
-        'TOLERANCE_SECONDS': 18000,
+        'POLICY': {
+            'clock_in_early_hours': clock_in_early_hours,
+            'clock_in_late_minutes': clock_in_late_minutes,
+            'clock_out_early_minutes': clock_out_early_minutes,
+            'clock_out_late_hours': clock_out_late_hours,
+        },
+        'TOLERANCE_SECONDS': clock_in_early_hours * 3600,
         'whatsapp_api_url': 'http://10.60.10.46:8192/send-group-message'
     }
     return config
@@ -147,6 +170,25 @@ def retrieve_attendance_transactions(conn_data_db, tr_controller_list, start_dt,
     df['InsertDate'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     return df
 
+def initialize_schedule_locks_from_first_scans(df_transactions, conn_data_db, policy, lock_cache=None, dry_run=False):
+    if df_transactions is None or len(df_transactions) == 0:
+        return
+    if conn_data_db is None:
+        return
+    if 'TrDateTime' not in df_transactions.columns or 'StaffNo' not in df_transactions.columns:
+        return
+
+    df = df_transactions[['StaffNo', 'TrDateTime']].copy()
+    df['TrDateTime'] = pd.to_datetime(df['TrDateTime'])
+    df['ShiftDate'] = df['TrDateTime'].dt.date
+    grouped = df.groupby(['StaffNo', 'ShiftDate'], as_index=False)['TrDateTime'].min()
+
+    for _, r in grouped.iterrows():
+        staff_no = r['StaffNo']
+        shift_date = r['ShiftDate']
+        first_scan_dt = r['TrDateTime']
+        _ensure_schedule_lock(conn_data_db, staff_no, shift_date, first_scan_dt, policy, lock_cache=lock_cache, dry_run=dry_run)
+
 # --------------------------------------------------------------------------
 # 4. CLOCK EVENT LOGIC (Overtime and Overnight Handling)
 # --------------------------------------------------------------------------
@@ -170,7 +212,178 @@ def _to_bool_next_day(v):
         return x in ('y', 'yes', 'true', '1')
     return False
 
-def get_working_hours(staff_no, date_val, conn_data_db, manual_time_in, manual_time_out):
+def _next_occurrence(time_of_day, after_dt):
+    candidate = datetime.combine(after_dt.date(), time_of_day)
+    if candidate <= after_dt:
+        candidate += timedelta(days=1)
+    return candidate
+
+def _read_schedule_lock(conn_data_db, staff_no, shift_date, lock_cache=None):
+    if lock_cache is not None:
+        cached = lock_cache.get((staff_no, shift_date))
+        if cached is not None:
+            return cached
+    df = pd.read_sql(
+        "SELECT ScheduledIn, ScheduledOut, NextDay FROM dbo.AttendanceScheduleLock WHERE StaffNo = %s AND ShiftDate = %s",
+        conn_data_db,
+        params=[staff_no, shift_date]
+    )
+    if df.empty:
+        return None
+    ti = _parse_time_str(df['ScheduledIn'][0])
+    to_time = _parse_time_str(df['ScheduledOut'][0])
+    nd = _to_bool_next_day(df['NextDay'][0])
+    if ti is None or to_time is None:
+        return None
+    lock = {'time_in': ti, 'time_out': to_time, 'next_day': nd}
+    if lock_cache is not None:
+        lock_cache[(staff_no, shift_date)] = lock
+    return lock
+
+def _read_mtiusers_schedule(conn_data_db, staff_no):
+    df = pd.read_sql(
+        "SELECT CONVERT(varchar(8), time_in, 108) AS time_in, CONVERT(varchar(8), time_out, 108) AS time_out, next_day FROM dbo.MTIUsers WHERE employee_id = %s",
+        conn_data_db,
+        params=[staff_no]
+    )
+    if df.empty:
+        return None
+    ti = _parse_time_str(df['time_in'][0])
+    to_time = _parse_time_str(df['time_out'][0])
+    nd = _to_bool_next_day(df['next_day'][0])
+    if ti is None or to_time is None:
+        return None
+    return {'time_in': ti, 'time_out': to_time, 'next_day': nd}
+
+def _read_schedule_change_at(conn_data_db, staff_no, at_dt):
+    df = pd.read_sql(
+        "SELECT TOP 1 ChangedAt, TimeInNew, TimeOutNew, NextDayNew FROM dbo.ScheduleChangeLog WHERE StaffNo = %s AND ChangedAt <= %s ORDER BY ChangedAt DESC",
+        conn_data_db,
+        params=[staff_no, at_dt]
+    )
+    if df.empty:
+        return None
+    ti = _parse_time_str(df['TimeInNew'][0])
+    to_time = _parse_time_str(df['TimeOutNew'][0])
+    nd = _to_bool_next_day(df['NextDayNew'][0])
+    if ti is None or to_time is None:
+        return None
+    return {'time_in': ti, 'time_out': to_time, 'next_day': nd, 'changed_at': df['ChangedAt'][0]}
+
+def _schedule_datetimes(shift_date, schedule):
+    ti_dt = datetime.combine(shift_date, schedule['time_in'])
+    to_dt = datetime.combine(shift_date, schedule['time_out']) + (timedelta(days=1) if schedule['next_day'] else timedelta(0))
+    if to_dt <= ti_dt:
+        to_dt += timedelta(days=1)
+    return ti_dt, to_dt
+
+def _out_exists(conn_data_db, staff_no, scheduled_out_dt, policy):
+    out_start = scheduled_out_dt - timedelta(minutes=policy['clock_out_early_minutes'])
+    out_end = scheduled_out_dt + timedelta(hours=policy['clock_out_late_hours'])
+    cursor = conn_data_db.cursor()
+    cursor.execute(
+        "SELECT TOP 1 1 FROM dbo.tblAttendanceReport WHERE StaffNo = %s AND ClockEvent = 'Clock Out' AND TrDateTime >= %s AND TrDateTime <= %s",
+        (
+            str(staff_no),
+            out_start.strftime('%Y-%m-%d %H:%M:%S'),
+            out_end.strftime('%Y-%m-%d %H:%M:%S'),
+        )
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    return row is not None
+
+def _resolve_schedule_for_lock(conn_data_db, staff_no, shift_date, ref_dt, policy, lock_cache=None):
+    prev_date = shift_date - timedelta(days=1)
+    prev_lock = _read_schedule_lock(conn_data_db, staff_no, prev_date, lock_cache=lock_cache)
+    if prev_lock is None:
+        change_at = _read_schedule_change_at(conn_data_db, staff_no, ref_dt)
+        if change_at is not None:
+            return {'time_in': change_at['time_in'], 'time_out': change_at['time_out'], 'next_day': change_at['next_day']}
+        mti = _read_mtiusers_schedule(conn_data_db, staff_no)
+        return mti
+
+    _, prev_out_dt = _schedule_datetimes(prev_date, prev_lock)
+    boundary_dt = prev_out_dt
+    if not _out_exists(conn_data_db, staff_no, prev_out_dt, policy):
+        boundary_dt = prev_out_dt + timedelta(hours=policy['clock_out_late_hours'])
+
+    df = pd.read_sql(
+        "SELECT TOP 50 ChangedAt, TimeInNew, TimeOutNew, NextDayNew FROM dbo.ScheduleChangeLog WHERE StaffNo = %s AND ChangedAt > %s ORDER BY ChangedAt ASC",
+        conn_data_db,
+        params=[staff_no, boundary_dt]
+    )
+    candidate = None
+    for _, r in df.iterrows():
+        ti = _parse_time_str(r['TimeInNew'])
+        to_time = _parse_time_str(r['TimeOutNew'])
+        nd = _to_bool_next_day(r['NextDayNew'])
+        if ti is None or to_time is None:
+            continue
+        activation_dt = _next_occurrence(ti, boundary_dt)
+        if activation_dt.date() != shift_date:
+            continue
+        if candidate is None:
+            candidate = {
+                'activation_dt': activation_dt,
+                'changed_at': r['ChangedAt'],
+                'time_in': ti,
+                'time_out': to_time,
+                'next_day': nd,
+            }
+            continue
+        if activation_dt < candidate['activation_dt']:
+            candidate = {
+                'activation_dt': activation_dt,
+                'changed_at': r['ChangedAt'],
+                'time_in': ti,
+                'time_out': to_time,
+                'next_day': nd,
+            }
+            continue
+        if activation_dt == candidate['activation_dt'] and r['ChangedAt'] > candidate['changed_at']:
+            candidate = {
+                'activation_dt': activation_dt,
+                'changed_at': r['ChangedAt'],
+                'time_in': ti,
+                'time_out': to_time,
+                'next_day': nd,
+            }
+
+    if candidate is not None:
+        return {'time_in': candidate['time_in'], 'time_out': candidate['time_out'], 'next_day': candidate['next_day']}
+    return prev_lock
+
+def _ensure_schedule_lock(conn_data_db, staff_no, shift_date, ref_dt, policy, lock_cache=None, dry_run=False):
+    existing = _read_schedule_lock(conn_data_db, staff_no, shift_date, lock_cache=lock_cache)
+    if existing is not None:
+        return
+    schedule = _resolve_schedule_for_lock(conn_data_db, staff_no, shift_date, ref_dt, policy, lock_cache=lock_cache)
+    if schedule is None:
+        return
+    if lock_cache is not None:
+        lock_cache[(staff_no, shift_date)] = schedule
+    if dry_run:
+        return
+    cursor = conn_data_db.cursor()
+    try:
+        cursor.execute(
+            "INSERT INTO dbo.AttendanceScheduleLock (StaffNo, ShiftDate, ScheduledIn, ScheduledOut, NextDay) VALUES (%s, %s, %s, %s, %s)",
+            (
+                staff_no,
+                shift_date,
+                schedule['time_in'].strftime('%H:%M:%S'),
+                schedule['time_out'].strftime('%H:%M:%S'),
+                1 if schedule['next_day'] else 0,
+            )
+        )
+        conn_data_db.commit()
+    except Exception:
+        conn_data_db.rollback()
+    finally:
+        cursor.close()
+
+def get_working_hours(staff_no, date_val, conn_data_db, manual_time_in, manual_time_out, lock_cache=None):
     if manual_time_in and manual_time_out:
         ti = datetime.combine(date_val, manual_time_in)
         to = datetime.combine(date_val, manual_time_out)
@@ -181,74 +394,53 @@ def get_working_hours(staff_no, date_val, conn_data_db, manual_time_in, manual_t
     if conn_data_db is None:
         return None, None
 
-    lock_df = pd.read_sql(
-        "SELECT ScheduledIn, ScheduledOut, NextDay FROM dbo.AttendanceScheduleLock WHERE StaffNo = %s AND ShiftDate = %s",
-        conn_data_db,
-        params=[staff_no, date_val]
-    )
-    if not lock_df.empty:
-        ti = _parse_time_str(lock_df['ScheduledIn'][0])
-        to_time = _parse_time_str(lock_df['ScheduledOut'][0])
-        nd = _to_bool_next_day(lock_df['NextDay'][0])
-        if ti is None or to_time is None:
-            return None, None
-        ti_dt = datetime.combine(date_val, ti)
-        to_dt = datetime.combine(date_val, to_time) + (timedelta(days=1) if nd else timedelta(0))
-        if to_dt <= ti_dt:
-            to_dt += timedelta(days=1)
-        return ti_dt, to_dt
-
-    mti_df = pd.read_sql(
-        "SELECT CONVERT(varchar(8), time_in, 108) AS time_in, CONVERT(varchar(8), time_out, 108) AS time_out, next_day FROM dbo.MTIUsers WHERE employee_id = %s",
-        conn_data_db,
-        params=[staff_no]
-    )
-    if mti_df.empty:
+    lock = _read_schedule_lock(conn_data_db, staff_no, date_val, lock_cache=lock_cache)
+    if lock is None:
         return None, None
-    ti = _parse_time_str(mti_df['time_in'][0])
-    to_time = _parse_time_str(mti_df['time_out'][0])
-    nd = _to_bool_next_day(mti_df['next_day'][0])
-    if ti is None or to_time is None:
-        return None, None
+    return _schedule_datetimes(date_val, lock)
 
-    ins_cur = conn_data_db.cursor()
-    ins_cur.execute(
-        "INSERT INTO dbo.AttendanceScheduleLock (StaffNo, ShiftDate, ScheduledIn, ScheduledOut, NextDay) VALUES (%s, %s, %s, %s, %s)",
-        (staff_no, date_val, ti.strftime('%H:%M:%S'), to_time.strftime('%H:%M:%S'), 1 if nd else 0)
-    )
-    conn_data_db.commit()
-    ins_cur.close()
-
-    ti_dt = datetime.combine(date_val, ti)
-    to_dt = datetime.combine(date_val, to_time) + (timedelta(days=1) if nd else timedelta(0))
-    if to_dt <= ti_dt:
-        to_dt += timedelta(days=1)
-    return ti_dt, to_dt
-
-def determine_clock_event(row, conn_data_db, manual_time_in, manual_time_out, tolerance_seconds):
+def determine_clock_event(row, conn_data_db, manual_time_in, manual_time_out, policy, lock_cache=None, dry_run=False):
     staff_no = row['StaffNo']
     tr_datetime = row['TrDateTime']
     d = tr_datetime.date()
-    scheduled_in, scheduled_out = get_working_hours(staff_no, d, conn_data_db, manual_time_in, manual_time_out)
+
+    if manual_time_in and manual_time_out:
+        scheduled_in, scheduled_out = get_working_hours(staff_no, d, conn_data_db, manual_time_in, manual_time_out, lock_cache=lock_cache)
+        if not scheduled_in or not scheduled_out:
+            return 'No Shift Data', d
+        in_start = scheduled_in - timedelta(hours=policy['clock_in_early_hours'])
+        in_end = scheduled_in + timedelta(minutes=policy['clock_in_late_minutes'])
+        if in_start <= tr_datetime <= in_end:
+            return 'Clock In', d
+        out_start = scheduled_out - timedelta(minutes=policy['clock_out_early_minutes'])
+        out_end = scheduled_out + timedelta(hours=policy['clock_out_late_hours'])
+        if out_start <= tr_datetime <= out_end:
+            return 'Clock Out', d
+        return 'Outside Range', d
+
+    prev_date = d - timedelta(days=1)
+    _ensure_schedule_lock(conn_data_db, staff_no, prev_date, tr_datetime, policy, lock_cache=lock_cache, dry_run=dry_run)
+    prev_lock = _read_schedule_lock(conn_data_db, staff_no, prev_date, lock_cache=lock_cache)
+    if prev_lock is not None and prev_lock['next_day']:
+        _, prev_out = _schedule_datetimes(prev_date, prev_lock)
+        prev_out_start = prev_out - timedelta(minutes=policy['clock_out_early_minutes'])
+        prev_out_end = prev_out + timedelta(hours=policy['clock_out_late_hours'])
+        if prev_out_start <= tr_datetime <= prev_out_end:
+            return 'Clock Out', prev_date
+
+    _ensure_schedule_lock(conn_data_db, staff_no, d, tr_datetime, policy, lock_cache=lock_cache, dry_run=dry_run)
+    scheduled_in, scheduled_out = get_working_hours(staff_no, d, conn_data_db, None, None, lock_cache=lock_cache)
     if not scheduled_in or not scheduled_out:
-        return 'No Shift Data'
-    in_start = scheduled_in - timedelta(seconds=tolerance_seconds)
-    in_end = scheduled_in + timedelta(hours=1)
+        return 'No Shift Data', d
+    in_start = scheduled_in - timedelta(hours=policy['clock_in_early_hours'])
+    in_end = scheduled_in + timedelta(minutes=policy['clock_in_late_minutes'])
     if in_start <= tr_datetime <= in_end:
-        return 'Clock In'
-    out_start = scheduled_out - timedelta(hours=1)
-    out_end = scheduled_out + timedelta(hours=8)
+        return 'Clock In', d
+    out_start = scheduled_out - timedelta(minutes=policy['clock_out_early_minutes'])
+    out_end = scheduled_out + timedelta(hours=policy['clock_out_late_hours'])
     if out_start <= tr_datetime <= out_end:
-        return 'Clock Out'
-    if tr_datetime.time() < time(12, 0):
-        pd = d - timedelta(days=1)
-        p_in, p_out = get_working_hours(staff_no, pd, conn_data_db, manual_time_in, manual_time_out)
-        if p_in and p_out:
-            p_out_start = p_out - timedelta(hours=1)
-            p_out_end = p_out + timedelta(hours=8)
-            if p_out_start <= tr_datetime <= p_out_end:
-                return 'Clock Out'
-    return 'Outside Range'
+        return 'Clock Out', d
+    return 'Outside Range', d
 
 def filo_clock_events(group):
     """
@@ -267,7 +459,7 @@ def filo_clock_events(group):
         group.iloc[-1, group.columns.get_loc('ClockEvent')] = 'Clock Out'
     return group
 
-def apply_clock_event_logic(df, conn_data_db, manual_time_in, manual_time_out, tolerance_seconds, use_filo=False):
+def apply_clock_event_logic(df, conn_data_db, manual_time_in, manual_time_out, policy, lock_cache=None, dry_run=False, use_filo=False):
     if len(df) == 0:
         print("WARNING: DataFrame is empty! Adding ClockEvent column and returning.")
         df['ClockEvent'] = pd.Series(dtype='object')
@@ -276,21 +468,28 @@ def apply_clock_event_logic(df, conn_data_db, manual_time_in, manual_time_out, t
     if use_filo:
         df = df.groupby(['StaffNo', 'TrDate'], group_keys=False).apply(filo_clock_events)
     else:
-        df['ClockEvent'] = df.apply(
-            lambda row: determine_clock_event(
-                row,
-                conn_data_db,
-                manual_time_in,
-                manual_time_out,
-                tolerance_seconds
+        computed = df.apply(
+            lambda row: pd.Series(
+                determine_clock_event(
+                    row,
+                    conn_data_db,
+                    manual_time_in,
+                    manual_time_out,
+                    policy,
+                    lock_cache=lock_cache,
+                    dry_run=dry_run
+                ),
+                index=['ClockEvent', 'ShiftDate']
             ),
             axis=1
         )
+        df['ClockEvent'] = computed['ClockEvent']
+        df['TrDate'] = computed['ShiftDate']
     
     # Add schedule columns for reporting purposes
     def add_schedule_info(row):
         try:
-            wh = get_working_hours(row['StaffNo'], row['TrDate'], conn_data_db, manual_time_in, manual_time_out)
+            wh = get_working_hours(row['StaffNo'], row['TrDate'], conn_data_db, manual_time_in, manual_time_out, lock_cache=lock_cache)
             if wh and wh[0] and wh[1]:
                 return pd.Series({'ScheduledClockIn': wh[0], 'ScheduledClockOut': wh[1]})
             return pd.Series({'ScheduledClockIn': None, 'ScheduledClockOut': None})
@@ -332,17 +531,15 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
         # Convert Python datetime to string in the same format as your DB uses.
         transaction_datetime_str = row['Transaction Date Time'].strftime('%Y-%m-%d %H:%M:%S')
 
-        # 1) Check if this record already exists by StaffNo + TrDateTime + ClockEvent
+        # 1) Check if this record already exists by StaffNo + TrDateTime
         cursor.execute("""
             SELECT COUNT(*)
             FROM dbo.tblAttendanceReport
             WHERE StaffNo = %s
               AND TrDateTime = %s
-              AND ClockEvent = %s
         """, (
             str(row['StaffNo']),
-            transaction_datetime_str,
-            str(row['ClockEvent'])
+            transaction_datetime_str
         ))
         existing_count = cursor.fetchone()[0]
 
@@ -352,11 +549,9 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
                 DELETE FROM dbo.tblAttendanceReport
                 WHERE StaffNo = %s
                   AND TrDateTime = %s
-                  AND ClockEvent = %s
             """, (
                 str(row['StaffNo']),
-                transaction_datetime_str,
-                str(row['ClockEvent'])
+                transaction_datetime_str
             ))
             logging.info(
                 f"Deleted existing record from tblAttendanceReport "
@@ -380,11 +575,11 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
             try:
                 # Get working hours for this staff member on the transaction date
                 scheduled_in, scheduled_out = get_working_hours(
-                    row['StaffNo'], 
-                    row['Transaction Date Time'].date(), 
-                    conn_data_db, 
-                    None,  # manual_time_in
-                    None   # manual_time_out
+                    row['StaffNo'],
+                    row['Transaction Date'],
+                    conn_data_db,
+                    None,
+                    None
                 )
                 
                 if scheduled_in and scheduled_out:
@@ -615,20 +810,20 @@ def send_media_group(chatid, message, file_path, file_type, api_url):
 # --------------------------------------------------------------------------
 # 7.1 MISSING CLOCK OUT GENERATOR
 # --------------------------------------------------------------------------
-def generate_missing_clock_outs(df_processed, conn_data_emp, job_end_datetime):
+def generate_missing_clock_outs(df_processed, job_end_datetime, policy):
     rows = []
     in_rows = df_processed[df_processed['ClockEvent'] == 'Clock In']
     for _, r in in_rows.iterrows():
         staff = r['StaffNo']
         d = r['TrDate']
-        wh = get_working_hours(staff, d, conn_data_emp, None, None)
-        if not wh or not wh[0] or not wh[1]:
+        scheduled_out = r.get('ScheduledClockOut')
+        if scheduled_out is None or pd.isna(scheduled_out):
             continue
-        out_start = wh[1] - timedelta(hours=1)
-        out_end = wh[1] + timedelta(hours=8)
+        out_start = scheduled_out - timedelta(minutes=policy['clock_out_early_minutes'])
+        out_end = scheduled_out + timedelta(hours=policy['clock_out_late_hours'])
         if job_end_datetime < out_end:
             continue
-        out_rows = df_processed[(df_processed['StaffNo'] == staff) & (df_processed['ClockEvent'] == 'Clock Out')]
+        out_rows = df_processed[(df_processed['StaffNo'] == staff) & (df_processed['TrDate'] == d) & (df_processed['ClockEvent'] == 'Clock Out')]
         found = False
         for _, ro in out_rows.iterrows():
             ts = ro['TrDateTime']
@@ -647,7 +842,7 @@ def generate_missing_clock_outs(df_processed, conn_data_emp, job_end_datetime):
             'Company': r['Company'],
             'StaffNo': staff,
             'Transaction Date Time': out_end,
-            'Transaction Date': out_end.date(),
+            'Transaction Date': d,
             'Transaction Status': 'System Generated',
             'TrController': r['TrController'],
             'ClockEvent': 'Missing Clock Out',
@@ -665,9 +860,15 @@ def main():
     config = get_config()
 
     WAID = args.waid
+    DRY_RUN = bool(args.dry_run)
     INSERT_TO_MCG_CLOCKING_TBL = args.insert_mcg
     INSERT_TO_TBL_ATTENDANCE_REPORT = args.insert_att
     USE_FILO = args.use_filo
+
+    if DRY_RUN:
+        INSERT_TO_MCG_CLOCKING_TBL = False
+        INSERT_TO_TBL_ATTENDANCE_REPORT = False
+        args.force_replace = False
 
     print("Arguments parsed and configuration loaded.")
 
@@ -734,7 +935,7 @@ def main():
     print("Connected to EmployeeWorkflow.")
 
     conn_orange_temp = None
-    if INSERT_TO_MCG_CLOCKING_TBL or not (config['MANUAL_TIME_IN'] and config['MANUAL_TIME_OUT']):
+    if (not DRY_RUN) and (INSERT_TO_MCG_CLOCKING_TBL or not (config['MANUAL_TIME_IN'] and config['MANUAL_TIME_OUT'])):
         conn_orange_temp = connect_orange_temp(config)
         print("Connected to ORANGE-TEMP.")
 
@@ -754,12 +955,17 @@ def main():
     df_transactions.sort_values(by=['StaffNo', 'TrDate', 'TrDateTime'], inplace=True)
     print("DataFrame columns converted to datetime and sorted.")
 
+    lock_cache = {}
+    initialize_schedule_locks_from_first_scans(df_transactions, conn_data_emp, config['POLICY'], lock_cache=lock_cache, dry_run=DRY_RUN)
+
     df_processed = apply_clock_event_logic(
         df_transactions,
         conn_data_emp,
         config['MANUAL_TIME_IN'],
         config['MANUAL_TIME_OUT'],
-        config['TOLERANCE_SECONDS'],
+        config['POLICY'],
+        lock_cache=lock_cache,
+        dry_run=DRY_RUN,
         use_filo=USE_FILO
     )
     # Filter out rows with 'No Shift Data'
@@ -804,7 +1010,7 @@ def main():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_filename = f'attreport_{staff_prefix}24h_{timestamp}.csv'
 
-    df_missing = generate_missing_clock_outs(df_processed, conn_data_emp, end_datetime)
+    df_missing = generate_missing_clock_outs(df_processed, end_datetime, config['POLICY'])
     if len(df_missing) > 0:
         df_report = pd.concat([df_report, df_missing], ignore_index=True)
     export_to_csv(df_report, output_filename)
