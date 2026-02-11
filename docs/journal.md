@@ -725,6 +725,28 @@ Verification:
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
 
+2026-02-11T11:26:18+08:00
+
+- Expanded Phase 5 plan with reusable validation queries and expected outcomes
+
+2026-02-11T11:32:28+08:00
+
+- Added a local simulation script to update MTIUsers schedule and append ScheduleChangeLog without ranHR
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
+2026-02-11T13:21:47+08:00
+
+- Fixed simulate_schedule_change typing for MTIUsers next_day value
+
+Verification:
+
+- npx tsc --noEmit ran successfully
+- npm run lint executed; existing warnings remain unrelated to this change
+
 2026-02-11 11:21:28 WITA
 
 - Added strict dry-run mode for modv7 to generate report without DB writes

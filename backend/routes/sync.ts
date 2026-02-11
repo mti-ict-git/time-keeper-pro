@@ -1,10 +1,18 @@
 import { Router, Request, Response } from "express";
+import sql from "mssql";
 import { runScheduleSync, SyncResult } from "../sync";
 import { getPool } from "../db";
 
 export const syncRouter = Router();
 
 type SyncLog = SyncResult & { success: boolean; error?: string };
+
+function normalizeRunId(v: string): string | null {
+  const s = String(v ?? "").trim();
+  if (!s.length) return null;
+  const re = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return re.test(s) ? s : null;
+}
 
 let lastRun: SyncLog | null = null;
 let running = false;
@@ -46,7 +54,7 @@ async function saveLog(log: SyncLog): Promise<void> {
   req.input("error", log.error ?? null);
   req.input("detailsUpdated", JSON.stringify(log.detailsUpdated));
   req.input("detailsInserted", JSON.stringify(log.detailsInserted));
-  req.input("runId", log.runId);
+  req.input("runId", sql.UniqueIdentifier, normalizeRunId(log.runId));
   await req.query(
     "INSERT INTO SyncLogs (timestamp, total, updated, inserted, unchanged, success, error, detailsUpdated, detailsInserted, runId) VALUES (@timestamp, @total, @updated, @inserted, @unchanged, @success, @error, @detailsUpdated, @detailsInserted, @runId)"
   );
