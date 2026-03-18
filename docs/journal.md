@@ -792,6 +792,17 @@ Verification:
 
 - npm run lint executed successfully with existing react-refresh warnings
 - npx tsc --noEmit ran successfully
+ 
+Thu Mar 19 06:59:52 WITA 2026
+
+- Hardened sync scheduler bootstrap to avoid backend process exit when DB init fails; scheduler now retries initialization every 30 seconds [backend/routes/sync.ts]
+- Fixed sync run distributed-check call signature in runNow to use paged logs response correctly [backend/routes/sync.ts]
+- Added Docker Compose resilience with backend restart policy, backend healthcheck, web restart policy, and health-gated dependency on backend [docker-compose.yml]
+
+Verification:
+
+- npm run lint executed successfully with existing react-refresh warnings
+- npx tsc --noEmit ran successfully
 2026-02-10 16:08:47 UTC
 
 - Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas
