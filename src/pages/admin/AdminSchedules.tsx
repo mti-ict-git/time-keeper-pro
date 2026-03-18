@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ScheduleAsOfResult, ScheduleCombo, ScheduleHistoryItem, ScheduleLockItem, SchedulingEmployee } from '@/lib/services/schedulingApi';
 import { fetchScheduleAsOf, fetchScheduleCombos, fetchScheduleHistory, fetchScheduleLocks, fetchSchedulingEmployees } from '@/lib/services/schedulingApi';
 
+const targetUtcOffsetMinutes = 480;
+
 const AdminSchedules = () => {
   const [combos, setCombos] = useState<ScheduleCombo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -218,11 +220,16 @@ const AdminSchedules = () => {
               {lookupError && (
                 <p className="text-sm text-destructive">{lookupError}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Datetime display uses UTC+8, converted from source UTC+7 when provided by API.
+              </p>
               <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-12 md:col-span-4">
                   <div className="rounded-lg border p-4 space-y-2">
                     <p className="text-xs text-muted-foreground">Effective Schedule At</p>
-                    <p className="font-mono text-sm">{asOfData?.at ? new Date(asOfData.at).toLocaleString() : '—'}</p>
+                    <p className="font-mono text-sm">
+                      {asOfData?.at ? formatAsTargetOffset(asOfData.at, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : '—'}
+                    </p>
                     <p className="text-sm">
                       {asOfData ? `${asOfData.timeIn || '—'}–${asOfData.timeOut || '—'}` : '—'}
                     </p>
@@ -233,7 +240,7 @@ const AdminSchedules = () => {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Last change: {asOfData?.changedAt ? new Date(asOfData.changedAt).toLocaleString() : 'No historical change before selected time'}
+                      Last change: {asOfData?.changedAtLocal ? formatLocalSourceToTarget(asOfData.changedAtLocal, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : 'No historical change before selected time'}
                     </p>
                   </div>
                 </div>
@@ -255,7 +262,13 @@ const AdminSchedules = () => {
                     <div className="text-sm">
                       {selectedHistoryItem ? (
                         <div className="space-y-1">
-                          <p className="font-mono">{new Date(selectedHistoryItem.changedAt).toLocaleString()}</p>
+                          <p className="font-mono">
+                            {formatLocalSourceToTarget(
+                              selectedHistoryItem.changedAtLocal,
+                              selectedHistoryItem.sourceUtcOffsetMinutes,
+                              targetUtcOffsetMinutes
+                            )}
+                          </p>
                           <p>{selectedHistoryItem.timeIn || '—'}–{selectedHistoryItem.timeOut || '—'}</p>
                           <p className="text-xs text-muted-foreground">
                             {selectedHistoryItem.nextDay ? 'Overnight' : 'Day shift'}
@@ -283,7 +296,9 @@ const AdminSchedules = () => {
                       <TableBody>
                         {history.map((row) => (
                           <TableRow key={row.changeId}>
-                            <TableCell className="font-mono text-sm">{new Date(row.changedAt).toLocaleString()}</TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {formatLocalSourceToTarget(row.changedAtLocal, row.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
+                            </TableCell>
                             <TableCell className="font-mono text-sm">{row.timeIn || '—'}</TableCell>
                             <TableCell className="font-mono text-sm">{row.timeOut || '—'}</TableCell>
                             <TableCell>
@@ -325,7 +340,11 @@ const AdminSchedules = () => {
                                 {lock.nextDay ? 'Yes' : 'No'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-mono text-xs">{lock.lockedAt ? new Date(lock.lockedAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {lock.lockedAtLocal
+                                ? formatLocalSourceToTarget(lock.lockedAtLocal, lock.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
+                                : '—'}
+                            </TableCell>
                           </TableRow>
                         ))}
                         {locks.length === 0 && !lookupLoading && (
@@ -454,6 +473,52 @@ function fromDatetimeLocal(value: string): Date | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+function formatAsTargetOffset(isoValue: string, sourceOffsetMinutes: number, targetOffsetMinutes: number): string {
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return isoValue;
+  const sourceMs = date.getTime() + sourceOffsetMinutes * 60 * 1000;
+  const local = formatUtcMsAtOffset(sourceMs, sourceOffsetMinutes);
+  return formatLocalSourceToTarget(local, sourceOffsetMinutes, targetOffsetMinutes);
+}
+
+function formatLocalSourceToTarget(localValue: string, sourceOffsetMinutes: number, targetOffsetMinutes: number): string {
+  const parsed = parseLocalDateTime(localValue);
+  if (!parsed) return localValue;
+  const utcMs = Date.UTC(parsed.year, parsed.month - 1, parsed.day, parsed.hours, parsed.minutes, parsed.seconds) - sourceOffsetMinutes * 60 * 1000;
+  return formatUtcMsAtOffset(utcMs, targetOffsetMinutes);
+}
+
+function parseLocalDateTime(localValue: string): {
+  year: number;
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+} | null {
+  const m = localValue.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return null;
+  return {
+    year: Number(m[1]),
+    month: Number(m[2]),
+    day: Number(m[3]),
+    hours: Number(m[4]),
+    minutes: Number(m[5]),
+    seconds: Number(m[6] || "0"),
+  };
+}
+
+function formatUtcMsAtOffset(utcMs: number, offsetMinutes: number): string {
+  const shifted = new Date(utcMs + offsetMinutes * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  const hours = String(shifted.getUTCHours()).padStart(2, '0');
+  const minutes = String(shifted.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(shifted.getUTCSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 export default AdminSchedules;

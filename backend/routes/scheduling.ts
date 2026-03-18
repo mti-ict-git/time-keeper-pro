@@ -42,6 +42,7 @@ type ScheduleChangeLogRow = {
   ChangeId: number;
   StaffNo: string;
   ChangedAt: Date | string;
+  ChangedAtLocal: string | null;
   TimeInNew: string | null;
   TimeOutNew: string | null;
   NextDayNew: string | number | boolean | null;
@@ -55,6 +56,7 @@ type AttendanceScheduleLockRow = {
   ScheduledOut: string | null;
   NextDay: string | number | boolean | null;
   LockedAt: Date | string;
+  LockedAtLocal: string | null;
   SourceHash: string | null;
 };
 
@@ -71,6 +73,8 @@ function isMissingObjectError(err: unknown, objectName: string): boolean {
   const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
   return message.includes("invalid object name") && message.includes(objectName.toLowerCase());
 }
+
+const scheduleSourceUtcOffsetMinutes = 420;
 
 schedulingRouter.get("/employees", async (req: Request, res: Response) => {
   try {
@@ -159,7 +163,7 @@ schedulingRouter.get("/history", async (req: Request, res: Response) => {
     request.input("employeeId", sql.NVarChar, employeeId);
     request.input("limit", sql.Int, limit);
     let query =
-      "SELECT TOP (@limit) ChangeId, StaffNo, ChangedAt, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew, SourceHash FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId";
+      "SELECT TOP (@limit) ChangeId, StaffNo, ChangedAt, CONVERT(varchar(19), ChangedAt, 120) AS ChangedAtLocal, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew, SourceHash FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId";
     if (from) {
       const fromDate = new Date(from);
       if (!Number.isNaN(fromDate.getTime())) {
@@ -181,12 +185,14 @@ schedulingRouter.get("/history", async (req: Request, res: Response) => {
       changeId: Number(row.ChangeId) || 0,
       employeeId: String(row.StaffNo ?? ""),
       changedAt: row.ChangedAt instanceof Date ? row.ChangedAt.toISOString() : String(row.ChangedAt ?? ""),
+      changedAtLocal: row.ChangedAtLocal ?? "",
       timeIn: formatTime(row.TimeInNew),
       timeOut: formatTime(row.TimeOutNew),
       nextDay: toBoolNextDay(row.NextDayNew),
       sourceHash: row.SourceHash ?? "",
+      sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes,
     }));
-    res.json({ data });
+    res.json({ data, sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes });
   } catch (err) {
     if (isMissingObjectError(err, "ScheduleChangeLog")) {
       res.json({ data: [] });
@@ -216,7 +222,7 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
     historyReq.input("employeeId", sql.NVarChar, employeeId);
     historyReq.input("at", sql.DateTime, atDate);
     const historyResult = await historyReq.query(
-      "SELECT TOP 1 ChangeId, StaffNo, ChangedAt, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew, SourceHash FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId AND ChangedAt <= @at ORDER BY ChangedAt DESC, ChangeId DESC"
+      "SELECT TOP 1 ChangeId, StaffNo, ChangedAt, CONVERT(varchar(19), ChangedAt, 120) AS ChangedAtLocal, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew, SourceHash FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId AND ChangedAt <= @at ORDER BY ChangedAt DESC, ChangeId DESC"
     );
     const historyRow = (historyResult.recordset?.[0] as ScheduleChangeLogRow | undefined) ?? undefined;
 
@@ -224,7 +230,7 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
     nextReq.input("employeeId", sql.NVarChar, employeeId);
     nextReq.input("at", sql.DateTime, atDate);
     const nextResult = await nextReq.query(
-      "SELECT TOP 1 ChangeId, ChangedAt, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId AND ChangedAt > @at ORDER BY ChangedAt ASC, ChangeId ASC"
+      "SELECT TOP 1 ChangeId, ChangedAt, CONVERT(varchar(19), ChangedAt, 120) AS ChangedAtLocal, CONVERT(varchar(5), TimeInNew, 108) AS TimeInNew, CONVERT(varchar(5), TimeOutNew, 108) AS TimeOutNew, NextDayNew FROM dbo.ScheduleChangeLog WHERE StaffNo = @employeeId AND ChangedAt > @at ORDER BY ChangedAt ASC, ChangeId ASC"
     );
     const nextRow = (nextResult.recordset?.[0] as ScheduleChangeLogRow | undefined) ?? undefined;
 
@@ -235,11 +241,14 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
           at: atDate.toISOString(),
           source: "history",
           changedAt: historyRow.ChangedAt instanceof Date ? historyRow.ChangedAt.toISOString() : String(historyRow.ChangedAt ?? ""),
+          changedAtLocal: historyRow.ChangedAtLocal ?? "",
           timeIn: formatTime(historyRow.TimeInNew),
           timeOut: formatTime(historyRow.TimeOutNew),
           nextDay: toBoolNextDay(historyRow.NextDayNew),
           sourceHash: historyRow.SourceHash ?? "",
           nextChangeAt: nextRow ? (nextRow.ChangedAt instanceof Date ? nextRow.ChangedAt.toISOString() : String(nextRow.ChangedAt ?? "")) : null,
+          nextChangeAtLocal: nextRow?.ChangedAtLocal ?? null,
+          sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes,
         },
       });
       return;
@@ -258,11 +267,14 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
           at: atDate.toISOString(),
           source: "none",
           changedAt: null,
+          changedAtLocal: null,
           timeIn: "",
           timeOut: "",
           nextDay: false,
           sourceHash: "",
           nextChangeAt: nextRow ? (nextRow.ChangedAt instanceof Date ? nextRow.ChangedAt.toISOString() : String(nextRow.ChangedAt ?? "")) : null,
+          nextChangeAtLocal: nextRow?.ChangedAtLocal ?? null,
+          sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes,
         },
       });
       return;
@@ -274,6 +286,7 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
         at: atDate.toISOString(),
         source: "current",
         changedAt: null,
+        changedAtLocal: null,
         timeIn: formatTime(currentRow.time_in),
         timeOut: formatTime(currentRow.time_out),
         nextDay: toBoolNextDay(currentRow.next_day),
@@ -281,6 +294,8 @@ schedulingRouter.get("/as-of", async (req: Request, res: Response) => {
         dayType: currentRow.day_type ?? "",
         sourceHash: "",
         nextChangeAt: nextRow ? (nextRow.ChangedAt instanceof Date ? nextRow.ChangedAt.toISOString() : String(nextRow.ChangedAt ?? "")) : null,
+        nextChangeAtLocal: nextRow?.ChangedAtLocal ?? null,
+        sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes,
       },
     });
   } catch (err) {
@@ -310,7 +325,7 @@ schedulingRouter.get("/locks", async (req: Request, res: Response) => {
     request.input("employeeId", sql.NVarChar, employeeId);
     request.input("limit", sql.Int, limit);
     let query =
-      "SELECT TOP (@limit) StaffNo, ShiftDate, CONVERT(varchar(5), ScheduledIn, 108) AS ScheduledIn, CONVERT(varchar(5), ScheduledOut, 108) AS ScheduledOut, NextDay, LockedAt, SourceHash FROM dbo.AttendanceScheduleLock WHERE StaffNo = @employeeId";
+      "SELECT TOP (@limit) StaffNo, ShiftDate, CONVERT(varchar(5), ScheduledIn, 108) AS ScheduledIn, CONVERT(varchar(5), ScheduledOut, 108) AS ScheduledOut, NextDay, LockedAt, CONVERT(varchar(19), LockedAt, 120) AS LockedAtLocal, SourceHash FROM dbo.AttendanceScheduleLock WHERE StaffNo = @employeeId";
     if (fromDate) {
       request.input("fromDate", sql.Date, fromDate);
       query += " AND ShiftDate >= @fromDate";
@@ -329,9 +344,11 @@ schedulingRouter.get("/locks", async (req: Request, res: Response) => {
       scheduledOut: formatTime(row.ScheduledOut),
       nextDay: toBoolNextDay(row.NextDay),
       lockedAt: row.LockedAt instanceof Date ? row.LockedAt.toISOString() : String(row.LockedAt ?? ""),
+      lockedAtLocal: row.LockedAtLocal ?? "",
       sourceHash: row.SourceHash ?? "",
+      sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes,
     }));
-    res.json({ data });
+    res.json({ data, sourceUtcOffsetMinutes: scheduleSourceUtcOffsetMinutes });
   } catch (err) {
     if (isMissingObjectError(err, "AttendanceScheduleLock")) {
       res.json({ data: [] });

@@ -61,10 +61,12 @@ export interface ScheduleHistoryItem {
   changeId: number;
   employeeId: string;
   changedAt: string;
+  changedAtLocal: string;
   timeIn: string;
   timeOut: string;
   nextDay: boolean;
   sourceHash: string;
+  sourceUtcOffsetMinutes: number;
 }
 
 export interface ScheduleAsOfResult {
@@ -72,6 +74,7 @@ export interface ScheduleAsOfResult {
   at: string;
   source: "history" | "current" | "none";
   changedAt: string | null;
+  changedAtLocal: string | null;
   timeIn: string;
   timeOut: string;
   nextDay: boolean;
@@ -79,6 +82,8 @@ export interface ScheduleAsOfResult {
   dayType?: string;
   sourceHash: string;
   nextChangeAt: string | null;
+  nextChangeAtLocal: string | null;
+  sourceUtcOffsetMinutes: number;
 }
 
 export interface ScheduleLockItem {
@@ -88,7 +93,9 @@ export interface ScheduleLockItem {
   scheduledOut: string;
   nextDay: boolean;
   lockedAt: string;
+  lockedAtLocal: string;
   sourceHash: string;
+  sourceUtcOffsetMinutes: number;
 }
 
 export async function fetchScheduleHistory(params: {

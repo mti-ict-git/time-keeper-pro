@@ -768,6 +768,18 @@ Verification:
 
 - npm run lint executed successfully with existing react-refresh warnings
 - npx tsc --noEmit ran successfully
+
+Thu Mar 19 06:36:38 WITA 2026
+
+- Added explicit source timezone metadata (UTC+7) to back-in-time scheduling APIs and payload rows [backend/routes/scheduling.ts]
+- Added local timestamp fields for schedule history/as-of/lock records to avoid browser implicit timezone drift [backend/routes/scheduling.ts]
+- Updated scheduling API types to include sourceUtcOffsetMinutes and local datetime fields [src/lib/services/schedulingApi.ts]
+- Updated Admin Schedules back-in-time UI to convert source UTC+7 datetimes into UTC+8 display consistently [src/pages/admin/AdminSchedules.tsx]
+
+Verification:
+
+- npm run lint executed successfully with existing react-refresh warnings
+- npx tsc --noEmit ran successfully
 2026-02-10 16:08:47 UTC
 
 - Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas
