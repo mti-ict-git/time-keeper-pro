@@ -183,8 +183,8 @@ async function runNow() {
   
   // Distributed check: Ensure we don't run if another instance just ran
   try {
-    const logs = await fetchLogs(1);
-    const lastLog = logs[0];
+    const logs = await fetchLogs(1, 0, false);
+    const lastLog = logs.rows[0];
     if (lastLog && enabled) {
       const elapsed = Date.now() - lastLog.timestamp.getTime();
       const minInterval = (intervalMinutes * 60 * 1000) - 10000; // 10s buffer
@@ -274,4 +274,21 @@ syncRouter.get("/logs", async (req: Request, res: Response) => {
   res.json({ logs: rows, page, pageSize, total, totalPages });
 });
 
-Promise.all([loadSettings(), ensureLogsTable()]).then(() => scheduleNext());
+function scheduleInitRetry(delayMs: number): void {
+  setTimeout(() => {
+    void initializeScheduler();
+  }, delayMs);
+}
+
+async function initializeScheduler(): Promise<void> {
+  try {
+    await Promise.all([loadSettings(), ensureLogsTable()]);
+    scheduleNext();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[Sync] Scheduler initialization failed:", message);
+    scheduleInitRetry(30000);
+  }
+}
+
+void initializeScheduler();
