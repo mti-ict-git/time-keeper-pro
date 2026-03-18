@@ -756,6 +756,18 @@ Verification:
 - python -m py_compile backend/attendance_report_modv7.py executed successfully
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
+
+Thu Mar 19 06:21:10 WITA 2026
+
+- Added scheduling history APIs for admin back-in-time queries: /api/scheduling/history, /api/scheduling/as-of, and /api/scheduling/locks [backend/routes/scheduling.ts]
+- Extended scheduling API client with schedule timeline, as-of, and lock history fetchers [src/lib/services/schedulingApi.ts]
+- Updated Admin Schedules with Employee ID based back-in-time lookup, datetime as-of inspector, timeline slider, history table, and lock history table [src/pages/admin/AdminSchedules.tsx]
+- Documented back-in-time lookup feature in project features list [README.md]
+
+Verification:
+
+- npm run lint executed successfully with existing react-refresh warnings
+- npx tsc --noEmit ran successfully
 2026-02-10 16:08:47 UTC
 
 - Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas

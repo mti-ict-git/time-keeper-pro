@@ -56,3 +56,93 @@ export async function fetchScheduleCombos(): Promise<ScheduleCombo[]> {
   const json = (await res.json()) as { data: ScheduleCombo[] };
   return json.data;
 }
+
+export interface ScheduleHistoryItem {
+  changeId: number;
+  employeeId: string;
+  changedAt: string;
+  timeIn: string;
+  timeOut: string;
+  nextDay: boolean;
+  sourceHash: string;
+}
+
+export interface ScheduleAsOfResult {
+  employeeId: string;
+  at: string;
+  source: "history" | "current" | "none";
+  changedAt: string | null;
+  timeIn: string;
+  timeOut: string;
+  nextDay: boolean;
+  description?: string;
+  dayType?: string;
+  sourceHash: string;
+  nextChangeAt: string | null;
+}
+
+export interface ScheduleLockItem {
+  employeeId: string;
+  shiftDate: string;
+  scheduledIn: string;
+  scheduledOut: string;
+  nextDay: boolean;
+  lockedAt: string;
+  sourceHash: string;
+}
+
+export async function fetchScheduleHistory(params: {
+  employeeId: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}): Promise<ScheduleHistoryItem[]> {
+  const qs = new URLSearchParams();
+  qs.set("employeeId", params.employeeId);
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(buildApiUrl("scheduling/history", qs), {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch schedule history: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: ScheduleHistoryItem[] };
+  return json.data;
+}
+
+export async function fetchScheduleAsOf(employeeId: string, at: string): Promise<ScheduleAsOfResult> {
+  const qs = new URLSearchParams();
+  qs.set("employeeId", employeeId);
+  qs.set("at", at);
+  const res = await fetch(buildApiUrl("scheduling/as-of", qs), {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch schedule as-of data: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: ScheduleAsOfResult };
+  return json.data;
+}
+
+export async function fetchScheduleLocks(params: {
+  employeeId: string;
+  fromDate?: string;
+  toDate?: string;
+  limit?: number;
+}): Promise<ScheduleLockItem[]> {
+  const qs = new URLSearchParams();
+  qs.set("employeeId", params.employeeId);
+  if (params.fromDate) qs.set("fromDate", params.fromDate);
+  if (params.toDate) qs.set("toDate", params.toDate);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(buildApiUrl("scheduling/locks", qs), {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch schedule locks: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: ScheduleLockItem[] };
+  return json.data;
+}
