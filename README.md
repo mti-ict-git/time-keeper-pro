@@ -80,3 +80,4 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 - Employees count opens a modal with filtered users and CSV export
 - MTIUsers sync tracks field-level changes in MTIUsersLastUpdate table for both Orange→MTIUsers and CardDB→MTIUsers enrichment, allowing estimation of when specific values were last updated
 - Admin Schedules includes a back-in-time lookup by Employee ID with as-of datetime, change timeline, and locked schedule history
+- Public Time Scheduling page includes historical schedule lookup by Employee ID for all users

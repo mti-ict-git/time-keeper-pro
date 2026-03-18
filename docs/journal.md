@@ -780,6 +780,18 @@ Verification:
 
 - npm run lint executed successfully with existing react-refresh warnings
 - npx tsc --noEmit ran successfully
+
+Thu Mar 19 06:47:38 WITA 2026
+
+- Added public historical schedule lookup to Time Scheduling page (/scheduling) so all users can query by Employee ID [src/pages/TimeScheduling.tsx]
+- Added public as-of datetime inspector, history range filters, timeline slider, change history table, and lock history table [src/pages/TimeScheduling.tsx]
+- Reused source timezone metadata from scheduling APIs and rendered history datetimes in UTC+8 for consistent public display [src/pages/TimeScheduling.tsx]
+- Updated README features to include public historical schedule lookup [README.md]
+
+Verification:
+
+- npm run lint executed successfully with existing react-refresh warnings
+- npx tsc --noEmit ran successfully
 2026-02-10 16:08:47 UTC
 
 - Executed Phase 1: created AttendanceScheduleLock and ScheduleChangeLog schemas
