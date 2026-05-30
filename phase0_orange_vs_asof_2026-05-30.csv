@@ -1,0 +1,48 @@
+employeeId,date,asOf_timeIn,asOf_timeOut,asOf_nextDay,asOf_fromHistory,asOf_desc,asOf_dayType,orange_timeIn,orange_timeOut,orange_nextDay,orange_desc,orange_dayType,mismatchNormalizedStill
+MTI220026,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220035,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220039,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220115,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220116,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220119,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220120,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI220150,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI230025,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI230098,2026-05-30,08:00,17:00,false,true,Respite Day / Fatigue Day,RESPITE,07:00,17:00,false,07:00-17:00 Normal SIte,07:00-17:00,true
+MTI230176,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI230200,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI230281,2026-05-30,07:00,15:00,false,false,07:00-15:00 Normal SIte,07:00-15:00,07:00,17:00,false,07:00-17:00 Normal SIte,07:00-17:00,true
+MTI230296,2026-05-30,07:00,17:00,false,false,07:00-17:00 Normal SIte,07:00-17:00,08:00,18:00,false,08:00-18:00 Normal SIte,08:00-18:00,true
+MTI240006,2026-05-30,23:00,07:00,true,true,23:00-07:00 3 Shift Malam,23:00-07:00,07:00,15:00,false,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,true
+MTI240030,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240031,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240033,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240105,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240107,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240136,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240139,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240222,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240348,2026-05-30,23:00,07:00,true,true,23:00-07:00 3 Shift Malam,23:00-07:00,07:00,15:00,false,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,true
+MTI240460,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240467,2026-05-30,15:00,23:00,false,true,15:00-23:00 3 Shift Sore Hari ke-6,15:00-23:00 6,23:00,07:00,true,23:00-07:00 3 Shift Malam Hari ke-6,23:00-07:00 6,true
+MTI240483,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240593,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI240641,2026-05-30,07:00,19:00,false,true,07:00-19:00 2 Shift Pagi Hari ke-6 dan 7,07:00-19:00 67,07:00,15:00,false,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,true
+MTI250017,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250019,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250024,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250059,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250098,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250141,2026-05-30,23:00,07:00,true,false,23:00-07:00 3 Shift Malam,23:00-07:00,07:00,15:00,false,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,true
+MTI250145,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250148,2026-05-30,07:00,15:00,false,true,07:00-15:00 Normal SIte,07:00-15:00,07:00,17:00,false,07:00-17:00 Normal SIte,07:00-17:00,true
+MTI250168,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250193,2026-05-30,07:00,15:00,false,true,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,,,false,OFF,OFF,true
+MTI250194,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI250198,2026-05-30,23:00,07:00,true,false,23:00-07:00 3 Shift Malam,23:00-07:00,07:00,15:00,false,07:00-15:00 3 Shift Pagi Hari ke-6,07:00-15:00 6,true
+MTI260001,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI260009,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI260017,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI260018,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI260024,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false
+MTI260025,2026-05-30,00:00,00:00,false,true,OFF,OFF,,,false,OFF,OFF,false

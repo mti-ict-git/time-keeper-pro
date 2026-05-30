@@ -3,6 +3,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ProcessedAttendanceRecord } from '../models';
 import { format } from 'date-fns';
+import type { SchedulingEmployee } from './schedulingApi';
 
 // Export to CSV
 export const exportToCSV = (
@@ -96,6 +97,55 @@ export const exportToXLSX = (
     { wch: 10 }, // Validity
   ];
   worksheet['!cols'] = colWidths;
+
+  XLSX.writeFile(workbook, `${filename}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+};
+
+export const exportSchedulingEmployeesToXLSX = (
+  employees: SchedulingEmployee[],
+  filename: string = 'employee_schedules'
+): void => {
+  const data = employees.map((emp) => ({
+    'Employee ID': emp.employeeId,
+    Name: emp.name,
+    Gender: emp.gender,
+    Division: emp.division,
+    Department: emp.department,
+    Section: emp.section,
+    'Supervisor ID': emp.supervisorId,
+    'Supervisor Name': emp.supervisorName,
+    'Position Title': emp.positionTitle,
+    'Grade Interval': emp.gradeInterval,
+    Phone: emp.phone,
+    'Day Type': emp.dayType,
+    Description: emp.description,
+    'Time In': emp.timeIn,
+    'Time Out': emp.timeOut,
+    'Next Day': emp.nextDay ? 'Yes' : 'No',
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Employee Schedules');
+
+  worksheet['!cols'] = [
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 28 },
+    { wch: 10 },
+    { wch: 10 },
+    { wch: 10 },
+  ];
 
   XLSX.writeFile(workbook, `${filename}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
 };

@@ -37,6 +37,75 @@ export async function fetchSchedulingEmployees(params?: { description?: string; 
   return json.data;
 }
 
+export interface SchedulingByDateRow {
+  employeeId: string;
+  date: string;
+  dayType: string;
+  description: string;
+  timeIn: string;
+  timeOut: string;
+  nextDay: boolean;
+  fetchedAt: string;
+  sourceHash: string;
+}
+
+export async function fetchSchedulingByDate(date: string): Promise<SchedulingByDateRow[]> {
+  const qs = new URLSearchParams();
+  qs.set("date", date);
+  const res = await fetch(buildApiUrl("scheduling/by-date", qs), {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch scheduling by-date: ${res.status}`);
+  }
+  const json = (await res.json()) as { date: string; data: SchedulingByDateRow[] };
+  return json.data;
+}
+
+export type OrangePrefetchLastRun = {
+  timestamp: string;
+  dates: string[];
+  totalEmployees: number;
+  inserted: number;
+  updated: number;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+};
+
+export type OrangePrefetchStatus = {
+  running: boolean;
+  intervalMinutes: number;
+  enabled: boolean;
+  daysBack: number;
+  daysForward: number;
+  nextRunAt: string | null;
+  lastRun: OrangePrefetchLastRun | null;
+};
+
+export async function fetchSchedulingByDatePrefetchStatus(): Promise<OrangePrefetchStatus> {
+  const res = await fetch(buildApiUrl("scheduling/by-date/prefetch/status"), {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch prefetch status: ${res.status}`);
+  }
+  const json = (await res.json()) as OrangePrefetchStatus;
+  return json;
+}
+
+export async function runSchedulingByDatePrefetch(): Promise<OrangePrefetchLastRun | null> {
+  const res = await fetch(buildApiUrl("scheduling/by-date/prefetch/run"), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to run prefetch: ${res.status}`);
+  }
+  const json = (await res.json()) as { lastRun: OrangePrefetchLastRun | null };
+  return json.lastRun;
+}
+
 export interface ScheduleCombo {
   label: string;
   dayType: string;

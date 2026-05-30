@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { fetchScheduleAsOf, fetchScheduleHistory, fetchScheduleLocks, fetchSchedulingEmployees, ScheduleAsOfResult, ScheduleHistoryItem, ScheduleLockItem, SchedulingEmployee } from '@/lib/services/schedulingApi';
+import { Link } from 'react-router-dom';
+import {
+  fetchScheduleAsOf,
+  fetchScheduleHistory,
+  fetchScheduleLocks,
+  fetchSchedulingByDate,
+  fetchSchedulingByDatePrefetchStatus,
+  fetchSchedulingEmployees,
+  runSchedulingByDatePrefetch,
+  OrangePrefetchStatus,
+  ScheduleAsOfResult,
+  ScheduleHistoryItem,
+  ScheduleLockItem,
+  SchedulingEmployee,
+} from '@/lib/services/schedulingApi';
 import { StatsCard } from '@/components/StatsCard';
 import { SchedulingDBTable } from '@/components/tables/SchedulingDBTable';
 import { Button } from '@/components/ui/button';
@@ -9,14 +22,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, Building2 } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, FileSpreadsheet, Loader2, CalendarDays, RefreshCw, Play } from 'lucide-react';
+import { exportSchedulingEmployeesToXLSX } from '@/lib/services/exportService';
+import { toast } from '@/hooks/use-toast';
 
 const targetUtcOffsetMinutes = 480;
 
 const TimeScheduling = () => {
-  const [employees, setEmployees] = useState<SchedulingEmployee[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<'truth' | 'snapshot' | 'history'>('truth');
   const [employeeId, setEmployeeId] = useState('');
   const [asOfAt, setAsOfAt] = useState(() => toDatetimeLocalValue(new Date()));
   const [historyFrom, setHistoryFrom] = useState(() => toDateInputValue(new Date(Date.now() - (1000 * 60 * 60 * 24 * 30))));
@@ -27,44 +41,108 @@ const TimeScheduling = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
+  const [exportLoading, setExportLoading] = useState(false);
 
-  const location = useLocation();
+  const [truthDate, setTruthDate] = useState(() => todayIsoInTz('Asia/Jakarta'));
+  const [truthRows, setTruthRows] = useState<SchedulingEmployee[]>([]);
+  const [truthLoading, setTruthLoading] = useState(false);
+  const [truthError, setTruthError] = useState('');
+  const [prefetchStatus, setPrefetchStatus] = useState<OrangePrefetchStatus | null>(null);
+  const [prefetchLoading, setPrefetchLoading] = useState(false);
+
   useEffect(() => {
-    setLoading(true);
-    const qs = new URLSearchParams(location.search);
-    const description = qs.get("description") || undefined;
-    const timeIn = qs.get("timeIn") || undefined;
-    const timeOut = qs.get("timeOut") || undefined;
-    const nextDayParam = qs.get("nextDay");
-    const nextDay = nextDayParam === null ? undefined : nextDayParam === "true" || nextDayParam === "1";
-    fetchSchedulingEmployees({ description, timeIn, timeOut, nextDay })
-      .then((rows) => setEmployees(rows))
-      .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
-      .finally(() => setLoading(false));
-  }, [location.search]);
+    void refreshPrefetchStatus();
+  }, []);
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    const totalEmployees = employees.length;
-    const timeInAvailable = employees.filter((e) => e.timeIn && e.timeIn.length > 0).length;
-    const timeOutAvailable = employees.filter((e) => e.timeOut && e.timeOut.length > 0).length;
+  useEffect(() => {
+    void loadTruthData(truthDate);
+  }, [truthDate]);
+
+  async function refreshPrefetchStatus(): Promise<void> {
+    try {
+      const status = await fetchSchedulingByDatePrefetchStatus();
+      setPrefetchStatus(status);
+    } catch {
+      setPrefetchStatus(null);
+    }
+  }
+
+  async function loadTruthData(date: string): Promise<void> {
+    setTruthLoading(true);
+    setTruthError('');
+    try {
+      const [status, scheduleRows, snapshotEmployees] = await Promise.all([
+        fetchSchedulingByDatePrefetchStatus(),
+        fetchSchedulingByDate(date),
+        fetchSchedulingEmployees(),
+      ]);
+      setPrefetchStatus(status);
+      const byId = new Map<string, SchedulingEmployee>();
+      snapshotEmployees.forEach((e) => byId.set(e.employeeId, e));
+      const merged = scheduleRows.map((r) => {
+        const base = byId.get(r.employeeId);
+        return {
+          employeeId: r.employeeId,
+          name: base?.name ?? '',
+          gender: base?.gender ?? '',
+          division: base?.division ?? '',
+          department: base?.department ?? '',
+          section: base?.section ?? '',
+          supervisorId: base?.supervisorId ?? '',
+          supervisorName: base?.supervisorName ?? '',
+          positionTitle: base?.positionTitle ?? '',
+          gradeInterval: base?.gradeInterval ?? '',
+          phone: base?.phone ?? '',
+          dayType: r.dayType,
+          description: r.description,
+          timeIn: r.timeIn,
+          timeOut: r.timeOut,
+          nextDay: r.nextDay,
+        };
+      });
+      setTruthRows(merged);
+    } catch (e) {
+      setTruthError(e instanceof Error ? e.message : 'Unknown error');
+      setTruthRows([]);
+    } finally {
+      setTruthLoading(false);
+    }
+  }
+
+  async function handleTruthRefresh(): Promise<void> {
+    await loadTruthData(truthDate);
+  }
+
+  async function handleTruthPrefetchRun(): Promise<void> {
+    setPrefetchLoading(true);
+    try {
+      await runSchedulingByDatePrefetch();
+      await Promise.all([refreshPrefetchStatus(), loadTruthData(truthDate)]);
+      toast({ title: 'Prefetch Completed', description: 'OrangeScheduleDaily updated and loaded' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast({ title: 'Prefetch Failed', description: message, variant: 'destructive' });
+    } finally {
+      setPrefetchLoading(false);
+    }
+  }
+
+  const truthStats = useMemo(() => {
+    const totalEmployees = truthRows.length;
+    const timeInAvailable = truthRows.filter((e) => e.timeIn && e.timeIn.length > 0).length;
+    const timeOutAvailable = truthRows.filter((e) => e.timeOut && e.timeOut.length > 0).length;
     const timeInNA = totalEmployees - timeInAvailable;
     const timeOutNA = totalEmployees - timeOutAvailable;
-    return { timeInAvailable, timeInNA, timeOutAvailable, timeOutNA };
-  }, [employees]);
+    const overnightCount = truthRows.filter((e) => e.nextDay).length;
+    return { totalEmployees, timeInAvailable, timeInNA, timeOutAvailable, timeOutNA, overnightCount };
+  }, [truthRows]);
 
-  // Organization breakdown
-  const orgBreakdown = useMemo(() => {
-    const deptMap = new Map<string, number>();
-    employees.forEach((emp) => {
-      const key = emp.department || "";
-      const count = deptMap.get(key) || 0;
-      deptMap.set(key, count + 1);
-    });
-    return Array.from(deptMap.entries())
-      .filter(([dept]) => dept && dept.length > 0)
-      .map(([dept, count]) => ({ department: dept, count }));
-  }, [employees]);
+  const prefetchBadge = useMemo(() => {
+    const last = prefetchStatus?.lastRun ?? null;
+    if (!last) return { label: 'Prefetch: none', variant: 'outline' as const };
+    if (last.success) return { label: `Prefetch OK: ${formatIsoShort(last.timestamp)}`, variant: 'outline' as const };
+    return { label: `Prefetch FAIL: ${formatIsoShort(last.timestamp)}`, variant: 'destructive' as const };
+  }, [prefetchStatus]);
 
   const selectedHistoryItem = useMemo(() => {
     if (history.length === 0) return null;
@@ -112,9 +190,29 @@ const TimeScheduling = () => {
     }
   };
 
+  const handleExportXLSX = async () => {
+    setExportLoading(true);
+    try {
+      const rows = await fetchSchedulingEmployees();
+      exportSchedulingEmployeesToXLSX(rows);
+      toast({
+        title: 'Export Successful',
+        description: 'Employee schedules exported to Excel',
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      toast({
+        title: 'Export Failed',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -122,7 +220,7 @@ const TimeScheduling = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-foreground">Time Scheduling</h1>
-            <p className="text-muted-foreground">Manage employee schedules and time assignments</p>
+            <p className="text-muted-foreground">Truth by-date, snapshot, and audit views</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -141,274 +239,298 @@ const TimeScheduling = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      {loading && (
-        <div className="p-4 text-muted-foreground">Loading scheduling overview…</div>
-      )}
-      {error && (
-        <div className="p-4 text-destructive">Error: {error}</div>
-      )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          title="Time In Available"
-          value={stats.timeInAvailable}
-          icon={CheckCircle}
-          variant="success"
-        />
-        <StatsCard
-          title="Time In N/A"
-          value={stats.timeInNA}
-          icon={XCircle}
-          variant="destructive"
-        />
-        <StatsCard
-          title="Time Out Available"
-          value={stats.timeOutAvailable}
-          icon={CheckCircle}
-          variant="success"
-        />
-        <StatsCard
-          title="Time Out N/A"
-          value={stats.timeOutNA}
-          icon={XCircle}
-          variant="destructive"
-        />
-      </div>
-
-      {/* Organization Breakdown */}
-      <Card className="border-0 shadow-lg shadow-primary/5">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
-              <Building2 className="h-5 w-5 text-accent" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground">Organization Breakdown</h3>
-              <p className="text-sm text-muted-foreground">Employees by department</p>
-            </div>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'truth' | 'snapshot' | 'history')} className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="truth">By Date (Truth)</TabsTrigger>
+            <TabsTrigger value="snapshot">Snapshot</TabsTrigger>
+            <TabsTrigger value="history">History / As-Of</TabsTrigger>
+          </TabsList>
+          <div className="flex items-center gap-2">
+            <Badge variant={prefetchBadge.variant}>{prefetchBadge.label}</Badge>
+            {prefetchStatus?.lastRun?.success === false && prefetchStatus?.lastRun?.error ? (
+              <Badge variant="destructive" className="hidden md:inline-flex max-w-[420px] truncate">
+                {prefetchStatus.lastRun.error}
+              </Badge>
+            ) : null}
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {orgBreakdown.map(({ department, count }) => (
-              <div
-                key={department}
-                className="bg-muted/50 rounded-xl p-4 text-center hover:bg-muted transition-colors"
-              >
-                <p className="text-2xl font-bold text-foreground">{count}</p>
-                <p className="text-xs text-muted-foreground truncate mt-1">{department}</p>
-              </div>
-            ))}
-            <div className="bg-primary/10 rounded-xl p-4 text-center">
-              <p className="text-2xl font-bold text-primary">{employees.length}</p>
-              <p className="text-xs text-muted-foreground mt-1">Total Employees</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <Card className="border-0 shadow-lg shadow-primary/5">
-        <CardContent className="p-5 space-y-4">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground">Historical Schedule Lookup</h3>
-              <p className="text-sm text-muted-foreground">Find schedule changes by employee ID across time</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-12 md:col-span-3 space-y-2">
-              <Label htmlFor="public-history-employee-id">Employee ID</Label>
-              <Input
-                id="public-history-employee-id"
-                placeholder="e.g. 101234"
-                value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
-              />
-            </div>
-            <div className="col-span-12 md:col-span-3 space-y-2">
-              <Label htmlFor="public-history-as-of">As Of Date Time</Label>
-              <Input
-                id="public-history-as-of"
-                type="datetime-local"
-                value={asOfAt}
-                onChange={(e) => setAsOfAt(e.target.value)}
-              />
-            </div>
-            <div className="col-span-12 md:col-span-2 space-y-2">
-              <Label htmlFor="public-history-from">History From</Label>
-              <Input
-                id="public-history-from"
-                type="date"
-                value={historyFrom}
-                onChange={(e) => setHistoryFrom(e.target.value)}
-              />
-            </div>
-            <div className="col-span-12 md:col-span-2 space-y-2">
-              <Label htmlFor="public-history-to">History To</Label>
-              <Input
-                id="public-history-to"
-                type="date"
-                value={historyTo}
-                onChange={(e) => setHistoryTo(e.target.value)}
-              />
-            </div>
-            <div className="col-span-12 md:col-span-2 flex items-end">
-              <Button onClick={handleHistoryLookup} disabled={lookupLoading} className="w-full">
-                {lookupLoading ? 'Loading…' : 'Lookup'}
-              </Button>
-            </div>
-          </div>
-
-          {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
-          <p className="text-xs text-muted-foreground">Datetime display uses UTC+8 converted from source UTC+7.</p>
-
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-12 md:col-span-4">
-              <div className="rounded-lg border p-4 space-y-2">
-                <p className="text-xs text-muted-foreground">Effective Schedule At</p>
-                <p className="font-mono text-sm">
-                  {asOfData?.at ? formatAsTargetOffset(asOfData.at, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : '—'}
-                </p>
-                <p className="text-sm">{asOfData ? `${asOfData.timeIn || '—'}–${asOfData.timeOut || '—'}` : '—'}</p>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">{asOfData?.source || 'none'}</Badge>
-                  <Badge variant="outline" className={asOfData?.nextDay ? 'bg-accent/10 text-accent' : ''}>
-                    {asOfData?.nextDay ? 'Overnight' : 'Day'}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Last change: {asOfData?.changedAtLocal ? formatLocalSourceToTarget(asOfData.changedAtLocal, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : 'No historical change before selected time'}
-                </p>
-              </div>
-            </div>
-
-            <div className="col-span-12 md:col-span-8">
-              <div className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">Timeline</p>
-                  <p className="text-xs text-muted-foreground">{history.length} changes</p>
-                </div>
-                <Input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, history.length - 1)}
-                  step={1}
-                  value={history.length > 0 ? historyIndex : 0}
-                  disabled={history.length === 0}
-                  onChange={(e) => setHistoryIndex(Number(e.target.value))}
-                />
-                <div className="text-sm">
-                  {selectedHistoryItem ? (
-                    <div className="space-y-1">
-                      <p className="font-mono">
-                        {formatLocalSourceToTarget(
-                          selectedHistoryItem.changedAtLocal,
-                          selectedHistoryItem.sourceUtcOffsetMinutes,
-                          targetUtcOffsetMinutes
-                        )}
-                      </p>
-                      <p>{selectedHistoryItem.timeIn || '—'}–{selectedHistoryItem.timeOut || '—'}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {selectedHistoryItem.nextDay ? 'Overnight' : 'Day shift'}
-                      </p>
+        <TabsContent value="truth" className="space-y-4">
+          <Card className="border-0 shadow-lg shadow-primary/5">
+            <CardContent className="p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <CalendarDays className="h-5 w-5 text-primary" />
                     </div>
-                  ) : (
-                    <p className="text-muted-foreground">No change history in selected range</p>
-                  )}
+                    <div>
+                      <h3 className="font-semibold text-foreground">By Date (Truth)</h3>
+                      <p className="text-sm text-muted-foreground">Reads from OrangeScheduleDaily (anti-latency)</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">ShiftDate currently keyed as WIB (+7). Times are stored as site-local time values.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleTruthRefresh} disabled={truthLoading} className="rounded-xl">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Refresh
+                  </Button>
+                  <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="rounded-xl">
+                    {prefetchLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                    Trigger Prefetch
+                  </Button>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-12 md:col-span-7">
-              <div className="data-table-container overflow-auto max-h-[260px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Changed At</TableHead>
-                      <TableHead>Time In</TableHead>
-                      <TableHead>Time Out</TableHead>
-                      <TableHead>Overnight</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {history.map((row) => (
-                      <TableRow key={row.changeId}>
-                        <TableCell className="font-mono text-sm">
-                          {formatLocalSourceToTarget(row.changedAtLocal, row.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">{row.timeIn || '—'}</TableCell>
-                        <TableCell className="font-mono text-sm">{row.timeOut || '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={row.nextDay ? 'bg-accent/10 text-accent' : ''}>
-                            {row.nextDay ? 'Yes' : 'No'}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {history.length === 0 && !lookupLoading && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">No history records</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <div className="md:col-span-2 space-y-2">
+                  <Label htmlFor="truth-date">Shift Date</Label>
+                  <Input id="truth-date" type="date" value={truthDate} onChange={(e) => setTruthDate(e.target.value)} />
+                </div>
+                <div className="md:col-span-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <StatsCard title="Employees" value={truthStats.totalEmployees} icon={Users} variant="default" />
+                  <StatsCard title="Time In OK" value={truthStats.timeInAvailable} icon={CheckCircle} variant="success" />
+                  <StatsCard title="Time In N/A" value={truthStats.timeInNA} icon={XCircle} variant="destructive" />
+                  <StatsCard title="Overnight" value={truthStats.overnightCount} icon={CheckCircle} variant="default" />
+                </div>
               </div>
-            </div>
 
-            <div className="col-span-12 md:col-span-5">
-              <div className="data-table-container overflow-auto max-h-[260px]">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Shift Date</TableHead>
-                      <TableHead>Schedule</TableHead>
-                      <TableHead>Locked At</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {locks.map((lock) => (
-                      <TableRow key={`${lock.employeeId}-${lock.shiftDate}`}>
-                        <TableCell>{lock.shiftDate}</TableCell>
-                        <TableCell className="font-mono text-sm">{lock.scheduledIn || '—'}–{lock.scheduledOut || '—'}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {lock.lockedAtLocal
-                            ? formatLocalSourceToTarget(lock.lockedAtLocal, lock.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
-                            : '—'}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {locks.length === 0 && !lookupLoading && (
-                      <TableRow>
-                        <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">No lock records</TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              {truthError ? <div className="text-sm text-destructive">{truthError}</div> : null}
+
+              {!truthLoading && truthRows.length === 0 ? (
+                <div className="rounded-xl border bg-muted/30 p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-foreground">No snapshot data for this date</p>
+                      <p className="text-sm text-muted-foreground">Trigger prefetch to fill OrangeScheduleDaily for the selected date range.</p>
+                    </div>
+                    <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="rounded-xl">
+                      {prefetchLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                      Trigger Prefetch
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="border-0 shadow-lg shadow-primary/5">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Users className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">Schedules for {truthDate}</h3>
+                  <p className="text-sm text-muted-foreground">Local filtering only</p>
+                </div>
               </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              <SchedulingDBTable data={truthRows} loading={truthLoading} error={truthError} disableUrlFilters />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {/* Employee Schedule Table */}
-      <Card className="border-0 shadow-lg shadow-primary/5">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Users className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-foreground">Employee Schedules</h3>
-              <p className="text-sm text-muted-foreground">View and manage all employee time schedules</p>
-            </div>
-          </div>
-          <SchedulingDBTable />
-        </CardContent>
-      </Card>
+        <TabsContent value="snapshot" className="space-y-4">
+          <Card className="border-0 shadow-lg shadow-primary/5">
+            <CardContent className="p-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <Users className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-foreground">Current Snapshot (MTIUsers)</h3>
+                    <p className="text-sm text-muted-foreground">Operational snapshot; can differ from by-date truth</p>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={handleExportXLSX} disabled={exportLoading} className="rounded-xl">
+                  {exportLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
+                  Export XLSX
+                </Button>
+              </div>
+              <SchedulingDBTable />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-4">
+          <Card className="border-0 shadow-lg shadow-primary/5">
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-foreground">History / As-Of Lookup</h3>
+                  <p className="text-sm text-muted-foreground">Audit schedule changes by employee ID</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 md:col-span-3 space-y-2">
+                  <Label htmlFor="public-history-employee-id">Employee ID</Label>
+                  <Input id="public-history-employee-id" placeholder="e.g. MTI210009" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
+                </div>
+                <div className="col-span-12 md:col-span-3 space-y-2">
+                  <Label htmlFor="public-history-as-of">As Of Date Time</Label>
+                  <Input id="public-history-as-of" type="datetime-local" value={asOfAt} onChange={(e) => setAsOfAt(e.target.value)} />
+                </div>
+                <div className="col-span-12 md:col-span-2 space-y-2">
+                  <Label htmlFor="public-history-from">History From</Label>
+                  <Input id="public-history-from" type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} />
+                </div>
+                <div className="col-span-12 md:col-span-2 space-y-2">
+                  <Label htmlFor="public-history-to">History To</Label>
+                  <Input id="public-history-to" type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} />
+                </div>
+                <div className="col-span-12 md:col-span-2 flex items-end">
+                  <Button onClick={handleHistoryLookup} disabled={lookupLoading} className="w-full">
+                    {lookupLoading ? 'Loading…' : 'Lookup'}
+                  </Button>
+                </div>
+              </div>
+
+              {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
+              <p className="text-xs text-muted-foreground">Datetime display uses UTC+8 converted from source UTC+7.</p>
+
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 md:col-span-4">
+                  <div className="rounded-lg border p-4 space-y-2">
+                    <p className="text-xs text-muted-foreground">Effective Schedule At</p>
+                    <p className="font-mono text-sm">
+                      {asOfData?.at ? formatAsTargetOffset(asOfData.at, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : '—'}
+                    </p>
+                    <p className="text-sm">{asOfData ? `${asOfData.timeIn || '—'}–${asOfData.timeOut || '—'}` : '—'}</p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{asOfData?.source || 'none'}</Badge>
+                      <Badge variant="outline" className={asOfData?.nextDay ? 'bg-accent/10 text-accent' : ''}>
+                        {asOfData?.nextDay ? 'Overnight' : 'Day'}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Last change:{' '}
+                      {asOfData?.changedAtLocal
+                        ? formatLocalSourceToTarget(asOfData.changedAtLocal, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
+                        : 'No historical change before selected time'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="col-span-12 md:col-span-8">
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">Timeline</p>
+                      <p className="text-xs text-muted-foreground">{history.length} changes</p>
+                    </div>
+                    <Input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, history.length - 1)}
+                      step={1}
+                      value={history.length > 0 ? historyIndex : 0}
+                      disabled={history.length === 0}
+                      onChange={(e) => setHistoryIndex(Number(e.target.value))}
+                    />
+                    <div className="text-sm">
+                      {selectedHistoryItem ? (
+                        <div className="space-y-1">
+                          <p className="font-mono">
+                            {formatLocalSourceToTarget(selectedHistoryItem.changedAtLocal, selectedHistoryItem.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
+                          </p>
+                          <p>
+                            {selectedHistoryItem.timeIn || '—'}–{selectedHistoryItem.timeOut || '—'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{selectedHistoryItem.nextDay ? 'Overnight' : 'Day shift'}</p>
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground">No change history in selected range</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-12 gap-4">
+                <div className="col-span-12 md:col-span-7">
+                  <div className="data-table-container overflow-auto max-h-[260px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Changed At</TableHead>
+                          <TableHead>Time In</TableHead>
+                          <TableHead>Time Out</TableHead>
+                          <TableHead>Overnight</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {history.map((row) => (
+                          <TableRow key={row.changeId}>
+                            <TableCell className="font-mono text-sm">
+                              {formatLocalSourceToTarget(row.changedAtLocal, row.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">{row.timeIn || '—'}</TableCell>
+                            <TableCell className="font-mono text-sm">{row.timeOut || '—'}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={row.nextDay ? 'bg-accent/10 text-accent' : ''}>
+                                {row.nextDay ? 'Yes' : 'No'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {history.length === 0 && !lookupLoading && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                              No history records
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                <div className="col-span-12 md:col-span-5">
+                  <div className="data-table-container overflow-auto max-h-[260px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Shift Date</TableHead>
+                          <TableHead>Schedule Lock (Legacy)</TableHead>
+                          <TableHead>Locked At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {locks.map((lock) => (
+                          <TableRow key={`${lock.employeeId}-${lock.shiftDate}`}>
+                            <TableCell>{lock.shiftDate}</TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {lock.scheduledIn || '—'}–{lock.scheduledOut || '—'}
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {lock.lockedAtLocal
+                                ? formatLocalSourceToTarget(lock.lockedAtLocal, lock.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
+                                : '—'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {locks.length === 0 && !lookupLoading && (
+                          <TableRow>
+                            <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                              No lock records
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
@@ -479,6 +601,21 @@ function formatUtcMsAtOffset(utcMs: number, offsetMinutes: number): string {
   const minutes = String(shifted.getUTCMinutes()).padStart(2, '0');
   const seconds = String(shifted.getUTCSeconds()).padStart(2, '0');
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function todayIsoInTz(timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+function formatIsoShort(isoValue: string): string {
+  const d = new Date(isoValue);
+  if (Number.isNaN(d.getTime())) return isoValue;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 export default TimeScheduling;

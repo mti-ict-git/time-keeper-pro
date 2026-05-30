@@ -48,7 +48,7 @@ export const AttendanceDBTable = () => {
   const [filterSearch, setFilterSearch] = useState<string>("");
 
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(globalFilter), 300);
+    const handle = setTimeout(() => setDebouncedSearch(globalFilter), 900);
     return () => clearTimeout(handle);
   }, [globalFilter]);
 

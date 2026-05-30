@@ -1,0 +1,92 @@
+{
+  "staff": "MTI210029",
+  "range": {
+    "from": "2026-05-26T04:00:00.000Z",
+    "to": "2026-05-27T18:00:00.000Z"
+  },
+  "shiftDate": "2026-05-27",
+  "lock": {
+    "StaffNo": "MTI210029",
+    "ShiftDate": "2026-05-27T00:00:00.000Z",
+    "LockedAt": "2026-05-28T00:00:29.870Z",
+    "LockedAtLocal": "2026-05-28 00:00:29",
+    "ScheduledIn": "08:00",
+    "ScheduledOut": "17:00",
+    "NextDay": false
+  },
+  "dataDb_count": 1,
+  "dataDb_rows": [
+    {
+      "StaffNo": "MTI210029",
+      "Name": "MURSALIM MALONDONG",
+      "TrDateTime": "2026-05-26T14:32:51.000Z",
+      "TrDate": "2026/05/26",
+      "dtTransaction": "Valid Entry Access",
+      "TrController": "FR-Pyrite Toilet-3104",
+      "UnitNo": "0011"
+    }
+  ],
+  "attendanceRaw_count": 2,
+  "attendanceRaw_rows": [
+    {
+      "StaffNo": "MTI210029",
+      "TrDateTime": "2026-05-26T14:32:51.000Z",
+      "TrDate": "2026-05-26T00:00:00.000Z",
+      "ClockEvent": "Clock In",
+      "TrController": "FR-Pyrite Toilet-3104",
+      "ScheduledClockIn": "1970-01-01T15:00:00.000Z",
+      "ScheduledClockOut": "1970-01-01T23:00:00.000Z"
+    },
+    {
+      "StaffNo": "MTI210029",
+      "TrDateTime": "2026-05-27T07:00:00.000Z",
+      "TrDate": "2026-05-26T00:00:00.000Z",
+      "ClockEvent": "Missing Clock Out",
+      "TrController": "FR-Pyrite Toilet-3104",
+      "ScheduledClockIn": "1970-01-01T15:00:00.000Z",
+      "ScheduledClockOut": "1970-01-01T23:00:00.000Z"
+    }
+  ],
+  "attendanceByShiftDate_count": 1,
+  "attendanceByShiftDate_rows": [
+    {
+      "StaffNo": "MTI210029",
+      "TrDateTime": "2026-05-27T22:37:01.000Z",
+      "TrDate": "2026-05-27T00:00:00.000Z",
+      "ClockEvent": "Clock Out",
+      "TrController": "FR-Pyrite Toilet-3104",
+      "ScheduledClockIn": "1970-01-01T08:00:00.000Z",
+      "ScheduledClockOut": "1970-01-01T17:00:00.000Z"
+    }
+  ],
+  "scheduleChangeLog_count": 3,
+  "scheduleChangeLog_rows": [
+    {
+      "ChangedAt": "2026-05-27T00:01:18.470Z",
+      "ChangedAtLocal": "2026-05-27 07:01:18",
+      "StaffNo": "MTI210029",
+      "TimeInNew": "23:00",
+      "TimeOutNew": "07:00",
+      "NextDayNew": true,
+      "SourceHash": "ae0cc81d5676347b97a1ea9ccec4ea004677c3f036cda0e75de885bd62cbabe9"
+    },
+    {
+      "ChangedAt": "2026-05-27T16:43:13.617Z",
+      "ChangedAtLocal": "2026-05-27 23:43:13",
+      "StaffNo": "MTI210029",
+      "TimeInNew": "08:00",
+      "TimeOutNew": "17:00",
+      "NextDayNew": false,
+      "SourceHash": "b966548ec72443860db7c98db5ed817edf567b2cbf189571a57f51e0cf6b162c"
+    },
+    {
+      "ChangedAt": "2026-05-28T00:01:28.760Z",
+      "ChangedAtLocal": "2026-05-28 07:01:28",
+      "StaffNo": "MTI210029",
+      "TimeInNew": "23:00",
+      "TimeOutNew": "07:00",
+      "NextDayNew": true,
+      "SourceHash": "ae0cc81d5676347b97a1ea9ccec4ea004677c3f036cda0e75de885bd62cbabe9"
+    }
+  ]
+}

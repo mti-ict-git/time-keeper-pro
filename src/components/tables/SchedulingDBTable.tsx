@@ -27,10 +27,17 @@ function normalizeTime(s: string): string {
   return s;
 }
 
-export const SchedulingDBTable = () => {
-  const [data, setData] = useState<SchedulingEmployee[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
+type SchedulingDBTableProps = {
+  data?: SchedulingEmployee[];
+  loading?: boolean;
+  error?: string;
+  disableUrlFilters?: boolean;
+};
+
+export const SchedulingDBTable = ({ data: externalData, loading: externalLoading, error: externalError, disableUrlFilters }: SchedulingDBTableProps) => {
+  const [data, setData] = useState<SchedulingEmployee[]>(externalData ?? []);
+  const [loading, setLoading] = useState<boolean>(Boolean(externalLoading));
+  const [error, setError] = useState<string>(externalError ?? "");
 
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState<string>("");
@@ -44,6 +51,7 @@ export const SchedulingDBTable = () => {
 
   const location = useLocation();
   useEffect(() => {
+    if (disableUrlFilters) return;
     const qs = new URLSearchParams(location.search);
     const descriptionParam = qs.get("description") || "";
     const timeInParam = qs.get("timeIn") || "";
@@ -53,9 +61,10 @@ export const SchedulingDBTable = () => {
     if (timeInParam) setTimeInFilter(timeInParam);
     if (timeOutParam) setTimeOutFilter(timeOutParam);
     if (nextDayParam) setNextDayFilter(nextDayParam);
-  }, [location.search]);
+  }, [location.search, disableUrlFilters]);
 
   useEffect(() => {
+    if (externalData) return;
     setLoading(true);
     const param = dayTypeFilter !== "all" ? { description: dayTypeFilter } : undefined;
     fetchSchedulingEmployees(param)
@@ -69,7 +78,27 @@ export const SchedulingDBTable = () => {
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, [dayTypeFilter]);
+  }, [dayTypeFilter, externalData]);
+
+  useEffect(() => {
+    if (!externalData) return;
+    const mapped = externalData.map((r) => ({
+      ...r,
+      timeIn: normalizeTime(r.timeIn),
+      timeOut: normalizeTime(r.timeOut),
+    }));
+    setData(mapped);
+  }, [externalData]);
+
+  useEffect(() => {
+    if (externalLoading === undefined) return;
+    setLoading(Boolean(externalLoading));
+  }, [externalLoading]);
+
+  useEffect(() => {
+    if (externalError === undefined) return;
+    setError(externalError);
+  }, [externalError]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((e) => e.department))).filter(Boolean).sort(), [data]);
   const divisions = useMemo(() => Array.from(new Set(data.map((e) => e.division))).filter(Boolean).sort(), [data]);

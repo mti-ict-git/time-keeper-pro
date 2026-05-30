@@ -50,10 +50,11 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     }
 
     const empIdCandidates = ["employee_id", "employeeid", "emp_id", "empid", "StaffNo"];
-    const empIdColumn = empIdCandidates.find((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
-    if (employeeId && empIdColumn) {
+    const empIdColumns = empIdCandidates.filter((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+    if (employeeId && empIdColumns.length) {
       request.input("employeeId", sql.NVarChar, employeeId);
-      conditions.push(`[${empIdColumn}] = @employeeId`);
+      const eqParts = empIdColumns.map((c) => `RTRIM(LTRIM([${c}])) = RTRIM(LTRIM(@employeeId))`);
+      conditions.push(`(${eqParts.join(" OR ")})`);
     }
 
     const deptCandidates = ["department", "dept", "Department"];
@@ -110,8 +111,8 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     }
 
     function computeStatus(sched: string, actual: string, isIn: boolean): string {
-      if (!actual) return "Missing";
       if (!sched) return "";
+      if (!actual) return "Missing";
       const sm = toMin(sched);
       const am = toMin(actual);
       const diff = isIn ? sm - am : am - sm;
@@ -137,7 +138,10 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       const dateRaw = obj["TrDate"] ?? obj["trdate"] ?? obj["date"] ?? obj["attendance_date"] ?? obj["record_date"] ?? "";
       const dtRaw = obj["TrDateTime"] ?? obj["trdatetime"] ?? "";
       const evRaw = obj["ClockEvent"] ?? obj["clock_event"] ?? "";
-      const ev = String(evRaw).toLowerCase();
+      const ev = String(evRaw).trim().toLowerCase();
+      const isClockIn = ev === "clock in" || ev === "in";
+      const isClockOut = ev === "clock out" || ev === "out";
+      const isMissingClockOut = ev === "missing clock out";
 
       // Determine the effective date (shift date)
       // If it's an overnight shift and we are clocking out in the morning, 
@@ -154,7 +158,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         const minO = Number(ho) * 60 + Number(mo);
         const nextDay = minO <= minI;
 
-        if (nextDay && ev.includes("out")) {
+        if (nextDay && isClockOut) {
            const actual = formatTime(dtRaw);
            if (actual) {
              const [ah] = actual.split(":").map(Number);
@@ -203,7 +207,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         }
       }
       const actual = formatTime(dtRaw);
-      if (ev.includes("in")) {
+      if (isClockIn) {
         const existing = String(next["actual_in"] || "");
         next["actual_in"] = existing && actual ? (existing < actual ? existing : actual) : actual || existing;
         const ctrl = String(obj["TrController"] ?? obj["controller_name"] ?? obj["Controller"] ?? "");
@@ -215,7 +219,11 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
           next["status_in"] = computeStatus(si, ai, true);
         }
       }
-      if (ev.includes("out")) {
+      if (isMissingClockOut) {
+        const s = String(next["status_out"] || "");
+        if (!s) next["status_out"] = "Missing";
+      }
+      if (isClockOut) {
         const existing = String(next["actual_out"] || "");
         next["actual_out"] = existing && actual ? (existing > actual ? existing : actual) : actual || existing;
         const ctrl = String(obj["TrController"] ?? obj["controller_name"] ?? obj["Controller"] ?? "");
@@ -230,8 +238,88 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       agg.set(key, next);
     }
 
+    type ScheduleDailyRow = {
+      StaffNo: string;
+      ShiftDate: Date | string;
+      TimeIn: unknown;
+      TimeOut: unknown;
+      NextDay: string | number | boolean | null;
+      DayType: string | null;
+      Description: string | null;
+    };
+
+    const pairs = Array.from(agg.values())
+      .map((v) => ({
+        staffNo: String(v["employee_id"] ?? ""),
+        shiftDate: String(v["date"] ?? ""),
+      }))
+      .filter((p) => p.staffNo.length > 0 && p.shiftDate.length > 0);
+
+    const scheduleMap = new Map<string, { scheduledIn: string; scheduledOut: string; nextDay: boolean; label: string }>();
+    if (pairs.length > 0) {
+      try {
+        const scheduleReq = pool.request();
+        scheduleReq.input("pairs", sql.NVarChar(sql.MAX), JSON.stringify(pairs));
+        const q = `
+          WITH p AS (
+            SELECT
+              staffNo,
+              shiftDate
+            FROM OPENJSON(@pairs)
+            WITH (
+              staffNo NVARCHAR(50) '$.staffNo',
+              shiftDate DATE '$.shiftDate'
+            )
+          )
+          SELECT
+            p.staffNo AS StaffNo,
+            p.shiftDate AS ShiftDate,
+            d.TimeIn,
+            d.TimeOut,
+            d.NextDay,
+            d.DayType,
+            d.Description
+          FROM p
+          LEFT JOIN dbo.OrangeScheduleDaily AS d
+            ON d.StaffNo = p.staffNo AND d.ShiftDate = p.shiftDate
+        `;
+        const scheduleRes = await scheduleReq.query(q);
+        const scheduleRows = (scheduleRes.recordset ?? []) as unknown as ScheduleDailyRow[];
+        for (const r of scheduleRows) {
+          const staffNo = String(r.StaffNo ?? "").trim();
+          const shiftDate = formatDate(r.ShiftDate);
+          const scheduledIn = formatTime(r.TimeIn);
+          const scheduledOut = formatTime(r.TimeOut);
+          const nextDay = toBoolNextDay(r.NextDay);
+          const label = String(r.Description ?? r.DayType ?? "");
+          if (staffNo && shiftDate) {
+            scheduleMap.set(`${staffNo}|${shiftDate}`, { scheduledIn, scheduledOut, nextDay, label });
+          }
+        }
+      } catch {
+        scheduleMap.clear();
+      }
+    }
+
+    for (const v of agg.values()) {
+      const staffNo = String(v["employee_id"] ?? "");
+      const shiftDate = String(v["date"] ?? "");
+      const sched = scheduleMap.get(`${staffNo}|${shiftDate}`);
+      if (sched) {
+        v["scheduled_in"] = sched.scheduledIn;
+        v["scheduled_out"] = sched.scheduledOut;
+        if (sched.label && !String(v["schedule_label"] ?? "").length) v["schedule_label"] = sched.label;
+      }
+      const si = String(v["scheduled_in"] ?? "");
+      const so = String(v["scheduled_out"] ?? "");
+      const ai = String(v["actual_in"] ?? "");
+      const ao = String(v["actual_out"] ?? "");
+      v["status_in"] = computeStatus(si, ai, true);
+      v["status_out"] = computeStatus(so, ao, false);
+    }
+
     const data = Array.from(agg.values()).sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
-    res.json({ data });
+    res.json({ data, scheduleSource: scheduleMap.size > 0 ? "OrangeScheduleDaily" : "tblAttendanceReport" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: message });

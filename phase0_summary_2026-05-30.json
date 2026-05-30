@@ -1,0 +1,20 @@
+{
+  "date": "2026-05-30",
+  "employeeCount": 1063,
+  "orangeVsAsOf": {
+    "compared": 1062,
+    "missingOrange": 1,
+    "strictMatch": 1015,
+    "strictMismatch": 47,
+    "normalizedMismatch": 11,
+    "mismatchCsv": "phase0_orange_vs_asof_2026-05-30.csv"
+  },
+  "orangeVsLock": {
+    "compared": 0,
+    "missingOrange": 0,
+    "strictMatch": 0,
+    "strictMismatch": 0,
+    "normalizedMismatch": 0,
+    "mismatchCsv": "phase0_orange_vs_lock_2026-05-30.csv"
+  }
+}

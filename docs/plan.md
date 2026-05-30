@@ -14,7 +14,7 @@ Policy Summary
 - Schedule changes never apply mid-shift; they take effect at the next occurrence of ScheduledIn after a safe boundary
 
 Two Systems
-- Python job (attendance_report_modv7.py): runs 12:00 AM and 12:00 PM
+- Python job (attendance_report_modv8.py): runs 12:00 AM and 12:00 PM
 - time-keeper-pro sync service: runs every 5 minutes, mirrors ranHR into EmployeeWorkflow.MTIUsers
 
 Phase 0 — Alignment
@@ -61,7 +61,7 @@ Test Setup (applies to all scenarios)
 - Choose 1 test employee (StaffNo) with predictable scans and schedule edits
 - Use WITA timestamps consistently for inputs and expectations
 - Ensure ScheduleChangeLog rows exist for each schedule edit event
-- Run modv7 in dry-run mode for safe validation of classification and shift-date assignment
+- Run modv8 in dry-run mode for safe validation of classification and shift-date assignment
 
 Validation Queries (reusable)
 - ScheduleChangeLog
@@ -73,9 +73,9 @@ Validation Queries (reusable)
 
 Execution (dry-run)
 - Single date
-  - python backend/attendance_report_modv7.py --date YYYY-MM-DD --staff-no MTIxxxxxx --dry-run
+  - python backend/attendance_report_modv8.py --date YYYY-MM-DD --staff-no MTIxxxxxx --dry-run
 - Date range
-  - python backend/attendance_report_modv7.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD --staff-no MTIxxxxxx --dry-run
+  - python backend/attendance_report_modv8.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD --staff-no MTIxxxxxx --dry-run
 
 Scenario 5.1 — Day shift change at 10:00; user clocks out normally
 - Given
@@ -129,8 +129,8 @@ Phase 6 — Monitoring & Alerts
 - Optional alert when passing +8h without Clock Out
 
 Phase 7 — Rollout
-- Dry-run modv7 alongside current job for 2 cycles; compare tblAttendanceReport outputs
-- Enable mcg_clocking_tbl writing from modv7 after validation
+- Dry-run modv8 alongside current job for 2 cycles; compare tblAttendanceReport outputs
+- Enable mcg_clocking_tbl writing from modv8 after validation
 - Keep change log for audit; periodically review anomaly rates
 
 Acceptance Criteria
@@ -140,6 +140,6 @@ Acceptance Criteria
 - Clear Missing Clock Out labeling after +8h without Out
 
 Notes
-- All implementation changes should target attendance_report_modv7.py
+- All implementation changes should target attendance_report_modv8.py
 - Python job must read schedules exclusively from MTIUsers (no CardDBTimeSchedule queries)
 - Sync service remains responsible only for mirroring ranHR to MTIUsers and logging changes
