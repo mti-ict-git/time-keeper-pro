@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
 import sql from "mssql";
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { getPool } from "../db";
 import { getTableColumns } from "../utils/introspection";
 import { formatTime, formatDate, toBoolNextDay } from "../utils/format";
@@ -325,3 +327,283 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     res.status(500).json({ error: message });
   }
 });
+
+type AttendanceRunLog = {
+  startedAt: Date;
+  finishedAt: Date;
+  durationMs: number;
+  success: boolean;
+  exitCode: number | null;
+  error?: string;
+  stdout?: string;
+  stderr?: string;
+};
+
+let attLastRun: AttendanceRunLog | null = null;
+let attRunning = false;
+let attIntervalMinutes = process.env.ATTENDANCE_INTERVAL_MINUTES ? Number(process.env.ATTENDANCE_INTERVAL_MINUTES) : 10;
+let attEnabled = String(process.env.ATTENDANCE_ENABLED ?? "").trim().toLowerCase() === "true";
+let attNextRunAt: Date | null = null;
+let attTimer: NodeJS.Timeout | null = null;
+let attPushLimit = process.env.ATTENDANCE_PUSH_LIMIT ? Number(process.env.ATTENDANCE_PUSH_LIMIT) : 5000;
+let attPushWindowMinutes = process.env.ATTENDANCE_PUSH_WINDOW_MINUTES ? Number(process.env.ATTENDANCE_PUSH_WINDOW_MINUTES) : 15;
+let attLookbackMinutes = process.env.ATTENDANCE_LOOKBACK_MINUTES ? Number(process.env.ATTENDANCE_LOOKBACK_MINUTES) : 2;
+let attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
+let attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
+let attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
+let attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
+
+async function ensureAttendanceRunnerSettingsTable(): Promise<void> {
+  const pool = await getPool();
+  await pool.request().query(
+    "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AttendanceRunnerSettings') BEGIN CREATE TABLE dbo.AttendanceRunnerSettings (id INT NOT NULL PRIMARY KEY, enabled BIT NOT NULL DEFAULT(0), intervalMinutes INT NOT NULL DEFAULT(10), pushLimit INT NOT NULL DEFAULT(5000), pushWindowMinutes INT NOT NULL DEFAULT(15), lookbackMinutes INT NOT NULL DEFAULT(2), updatedAt DATETIME NOT NULL DEFAULT(GETDATE())) END"
+  );
+}
+
+async function ensureAttendanceRunnerLogsTable(): Promise<void> {
+  const pool = await getPool();
+  await pool
+    .request()
+    .query(
+      "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AttendanceRunnerLogs') BEGIN CREATE TABLE dbo.AttendanceRunnerLogs (id INT IDENTITY(1,1) NOT NULL PRIMARY KEY, timestamp DATETIME NOT NULL DEFAULT(GETDATE()), durationMs INT NOT NULL, success BIT NOT NULL, exitCode INT NULL, error NVARCHAR(MAX) NULL, stdout NVARCHAR(MAX) NULL, stderr NVARCHAR(MAX) NULL) END"
+    );
+}
+
+async function loadAttendanceRunnerSettings(): Promise<void> {
+  await ensureAttendanceRunnerSettingsTable();
+  const pool = await getPool();
+  const res = await pool.request().query(
+    "SELECT TOP 1 id, enabled, intervalMinutes, pushLimit, pushWindowMinutes, lookbackMinutes FROM dbo.AttendanceRunnerSettings ORDER BY id ASC"
+  );
+  const row = res.recordset?.[0] as
+    | {
+        id?: unknown;
+        enabled?: unknown;
+        intervalMinutes?: unknown;
+        pushLimit?: unknown;
+        pushWindowMinutes?: unknown;
+        lookbackMinutes?: unknown;
+      }
+    | undefined;
+  if (!row) {
+    const req = pool.request();
+    req.input("id", 1);
+    req.input("enabled", attEnabled ? 1 : 0);
+    req.input("intervalMinutes", attIntervalMinutes);
+    req.input("pushLimit", attPushLimit);
+    req.input("pushWindowMinutes", attPushWindowMinutes);
+    req.input("lookbackMinutes", attLookbackMinutes);
+    await req.query(
+      "INSERT INTO dbo.AttendanceRunnerSettings (id, enabled, intervalMinutes, pushLimit, pushWindowMinutes, lookbackMinutes) VALUES (@id, @enabled, @intervalMinutes, @pushLimit, @pushWindowMinutes, @lookbackMinutes)"
+    );
+    return;
+  }
+  attEnabled = String(row.enabled) === "true" || Number(row.enabled) === 1;
+  const m = Number(row.intervalMinutes);
+  const pl = Number(row.pushLimit);
+  const pwm = Number(row.pushWindowMinutes);
+  const lbm = Number(row.lookbackMinutes);
+  if (Number.isFinite(m) && m > 0) attIntervalMinutes = m;
+  if (Number.isFinite(pl) && pl > 0) attPushLimit = pl;
+  if (Number.isFinite(pwm) && pwm > 0) attPushWindowMinutes = pwm;
+  if (Number.isFinite(lbm) && lbm >= 0) attLookbackMinutes = lbm;
+}
+
+async function saveAttendanceRunnerSettings(nextEnabled: boolean, nextInterval: number, nextPushLimit: number, nextPushWindowMinutes: number, nextLookbackMinutes: number): Promise<void> {
+  await ensureAttendanceRunnerSettingsTable();
+  const pool = await getPool();
+  const req = pool.request();
+  req.input("id", 1);
+  req.input("enabled", nextEnabled ? 1 : 0);
+  req.input("intervalMinutes", nextInterval);
+  req.input("pushLimit", nextPushLimit);
+  req.input("pushWindowMinutes", nextPushWindowMinutes);
+  req.input("lookbackMinutes", nextLookbackMinutes);
+  await req.query(
+    "MERGE dbo.AttendanceRunnerSettings AS t USING (SELECT @id AS id) AS s ON t.id = s.id WHEN MATCHED THEN UPDATE SET enabled = @enabled, intervalMinutes = @intervalMinutes, pushLimit = @pushLimit, pushWindowMinutes = @pushWindowMinutes, lookbackMinutes = @lookbackMinutes, updatedAt = GETDATE() WHEN NOT MATCHED THEN INSERT (id, enabled, intervalMinutes, pushLimit, pushWindowMinutes, lookbackMinutes, updatedAt) VALUES (@id, @enabled, @intervalMinutes, @pushLimit, @pushWindowMinutes, @lookbackMinutes, GETDATE());"
+  );
+}
+
+function clampText(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen);
+}
+
+async function saveAttendanceRunnerLog(log: AttendanceRunLog): Promise<void> {
+  await ensureAttendanceRunnerLogsTable();
+  const pool = await getPool();
+  const req = pool.request();
+  req.input("durationMs", Math.max(0, Math.floor(log.durationMs)));
+  req.input("success", log.success ? 1 : 0);
+  req.input("exitCode", sql.Int, log.exitCode === null ? null : log.exitCode);
+  req.input("error", log.error ?? null);
+  req.input("stdout", log.stdout ? clampText(log.stdout, 20000) : null);
+  req.input("stderr", log.stderr ? clampText(log.stderr, 20000) : null);
+  await req.query(
+    "INSERT INTO dbo.AttendanceRunnerLogs (durationMs, success, exitCode, error, stdout, stderr) VALUES (@durationMs, @success, @exitCode, @error, @stdout, @stderr)"
+  );
+}
+
+async function runAttendancePython(): Promise<AttendanceRunLog> {
+  const startedAt = new Date();
+  const scriptAbs = path.resolve(process.cwd(), attScriptRel);
+  const args: string[] = [
+    scriptAbs,
+    "--run-10min",
+    "--job-name",
+    attJobName,
+    "--push-limit",
+    String(attPushLimit),
+    "--push-window-minutes",
+    String(attPushWindowMinutes),
+    "--lookback-minutes",
+    String(attLookbackMinutes),
+  ];
+  if (attWaid) {
+    args.push("--waid", attWaid);
+  }
+
+  return await new Promise<AttendanceRunLog>((resolve) => {
+    const child = spawn(attPythonExe, args, { cwd: process.cwd(), env: process.env, windowsHide: true });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString("utf8");
+    });
+    child.stderr.on("data", (d: Buffer) => {
+      err += d.toString("utf8");
+    });
+    child.on("error", (e) => {
+      const finishedAt = new Date();
+      resolve({
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        success: false,
+        exitCode: null,
+        error: e instanceof Error ? e.message : String(e),
+        stdout: out,
+        stderr: err,
+      });
+    });
+    child.on("close", (code) => {
+      const finishedAt = new Date();
+      resolve({
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        success: code === 0,
+        exitCode: typeof code === "number" ? code : null,
+        error: code === 0 ? undefined : `Exited with code ${String(code)}`,
+        stdout: out,
+        stderr: err,
+      });
+    });
+  });
+}
+
+async function runAttendanceNow(): Promise<void> {
+  if (attRunning) return;
+  attRunning = true;
+  try {
+    const log = await runAttendancePython();
+    attLastRun = log;
+    await saveAttendanceRunnerLog(log);
+  } finally {
+    attRunning = false;
+  }
+}
+
+function scheduleAttendanceNext(): void {
+  if (attTimer) clearTimeout(attTimer);
+  if (!attEnabled) {
+    attNextRunAt = null;
+    return;
+  }
+  const ms = Math.max(1, attIntervalMinutes) * 60 * 1000;
+  attNextRunAt = new Date(Date.now() + ms);
+  attTimer = setTimeout(async () => {
+    await runAttendanceNow();
+    scheduleAttendanceNext();
+  }, ms);
+}
+
+function scheduleAttendanceInitRetry(delayMs: number): void {
+  setTimeout(() => {
+    void initializeAttendanceScheduler();
+  }, delayMs);
+}
+
+async function initializeAttendanceScheduler(): Promise<void> {
+  try {
+    await Promise.all([loadAttendanceRunnerSettings(), ensureAttendanceRunnerLogsTable()]);
+    scheduleAttendanceNext();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[AttendanceRunner] Scheduler initialization failed:", message);
+    scheduleAttendanceInitRetry(30000);
+  }
+}
+
+attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
+  res.json({
+    running: attRunning,
+    enabled: attEnabled,
+    intervalMinutes: attIntervalMinutes,
+    nextRunAt: attNextRunAt,
+    pushLimit: attPushLimit,
+    pushWindowMinutes: attPushWindowMinutes,
+    lookbackMinutes: attLookbackMinutes,
+    python: attPythonExe,
+    script: attScriptRel,
+    jobName: attJobName,
+    lastRun: attLastRun,
+  });
+});
+
+attendanceRouter.post("/runner/run", async (_req: Request, res: Response) => {
+  await runAttendanceNow();
+  res.json({ lastRun: attLastRun });
+});
+
+attendanceRouter.put("/runner/config", async (req: Request, res: Response) => {
+  const en = Boolean(req.body?.enabled);
+  const m = Number((req.body?.intervalMinutes as unknown) ?? attIntervalMinutes);
+  const pl = Number((req.body?.pushLimit as unknown) ?? attPushLimit);
+  const pwm = Number((req.body?.pushWindowMinutes as unknown) ?? attPushWindowMinutes);
+  const lbm = Number((req.body?.lookbackMinutes as unknown) ?? attLookbackMinutes);
+  if (!Number.isFinite(m) || m <= 0) {
+    res.status(400).json({ error: "intervalMinutes must be a positive number" });
+    return;
+  }
+  if (!Number.isFinite(pl) || pl <= 0) {
+    res.status(400).json({ error: "pushLimit must be a positive number" });
+    return;
+  }
+  if (!Number.isFinite(pwm) || pwm <= 0) {
+    res.status(400).json({ error: "pushWindowMinutes must be a positive number" });
+    return;
+  }
+  if (!Number.isFinite(lbm) || lbm < 0) {
+    res.status(400).json({ error: "lookbackMinutes must be a non-negative number" });
+    return;
+  }
+
+  attEnabled = en;
+  attIntervalMinutes = Math.floor(m);
+  attPushLimit = Math.floor(pl);
+  attPushWindowMinutes = Math.floor(pwm);
+  attLookbackMinutes = Math.floor(lbm);
+  await saveAttendanceRunnerSettings(attEnabled, attIntervalMinutes, attPushLimit, attPushWindowMinutes, attLookbackMinutes);
+  scheduleAttendanceNext();
+  res.json({
+    enabled: attEnabled,
+    intervalMinutes: attIntervalMinutes,
+    nextRunAt: attNextRunAt,
+    pushLimit: attPushLimit,
+    pushWindowMinutes: attPushWindowMinutes,
+    lookbackMinutes: attLookbackMinutes,
+  });
+});
+
+void initializeAttendanceScheduler();

@@ -48,6 +48,14 @@ def parse_arguments():
     parser.add_argument('--staff-no', help='Filter by specific staff number (e.g., MTI250034)')
     return parser.parse_args()
 
+def _resolve_waid(cli_waid):
+    if cli_waid is not None and str(cli_waid).strip() != "":
+        return str(cli_waid).strip()
+    env_waid = os.getenv("ATTENDANCE_WAID")
+    if env_waid is not None and str(env_waid).strip() != "":
+        return str(env_waid).strip()
+    return None
+
 # --------------------------------------------------------------------------
 # 2. CONFIG / CONSTANTS
 # --------------------------------------------------------------------------
@@ -69,24 +77,41 @@ def get_config():
     clock_out_early_minutes = _env_int('CLOCK_OUT_EARLY_MINUTES', 60)
     clock_out_late_hours = _env_int('CLOCK_OUT_LATE_HOURS', 8)
 
+    data_server = os.getenv("DATADB_SERVER") or "10.60.10.47"
+    data_db = os.getenv("DATADB_NAME") or "DataDBEnt"
+    data_user = os.getenv("DATADB_USER") or "sa"
+    data_pwd = os.getenv("DATADB_PASSWORD") or "Bl4ck3y34dmin"
+
+    emp_server = os.getenv("DB_SERVER") or "10.60.10.47"
+    emp_db = os.getenv("DB_NAME") or "EmployeeWorkflow"
+    emp_user = os.getenv("DB_USER") or "sa"
+    emp_pwd = os.getenv("DB_PASSWORD") or "Bl4ck3y34dmin"
+
+    orange_server = os.getenv("ORANGE_DB_SERVER") or "10.1.1.75"
+    orange_db = os.getenv("ORANGE_DB_NAME") or "ORANGE-PROD"
+    orange_user = os.getenv("ORANGE_DB_USER") or "IT.MTI"
+    orange_pwd = os.getenv("ORANGE_DB_PASSWORD") or "morowali"
+
+    whatsapp_api_url = os.getenv("WHATSAPP_API_URL") or "http://10.60.10.46:8192/send-group-message"
+
     config = {
         'conn_str_data_db': {
-            'server': '10.60.10.47',
-            'database': 'DataDBEnt',
-            'user': 'sa',
-            'password': 'Bl4ck3y34dmin'
+            'server': data_server,
+            'database': data_db,
+            'user': data_user,
+            'password': data_pwd
         },
         'conn_str_data_employee': {
-            'server': '10.60.10.47',
-            'database': 'EmployeeWorkflow',
-            'user': 'sa',
-            'password': 'Bl4ck3y34dmin'
+            'server': emp_server,
+            'database': emp_db,
+            'user': emp_user,
+            'password': emp_pwd
         },
         'conn_str_orange_temp': {
-            'server': '10.1.1.75',
-            'database': 'ORANGE-PROD',
-            'user': 'IT.MTI',
-            'password': 'morowali'
+            'server': orange_server,
+            'database': orange_db,
+            'user': orange_user,
+            'password': orange_pwd
         },
         'tr_controller_list': [
             'FR-Acid Halte-4626',
@@ -109,7 +134,7 @@ def get_config():
             'clock_out_late_hours': clock_out_late_hours,
         },
         'TOLERANCE_SECONDS': clock_in_early_hours * 3600,
-        'whatsapp_api_url': 'http://10.60.10.46:8192/send-group-message'
+        'whatsapp_api_url': whatsapp_api_url
     }
     return config
 
@@ -846,12 +871,13 @@ def insert_data_to_mcg_clocking_tbl(row, cursor, update_cursor):
 
 
 def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, force_replace=False):
+    inserted_count = 0
+    skipped_count = 0
+    mcg_success_count = 0
+
     # Insert into tblAttendanceReport first, if requested.
     if insert_att:
         cursor_data_db = conn_data_db.cursor()
-        
-        inserted_count = 0
-        skipped_count = 0
         
         for _, row in df.iterrows():
             was_inserted = insert_data_to_tbl_attendance_report(row, cursor_data_db, conn_data_db, force_replace)
@@ -886,8 +912,6 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
             cursor_orange = conn_orange_temp.cursor()
             update_cursor = conn_data_db.cursor()
 
-            mcg_success_count = 0  # count how many succeed
-
             for row in rows_to_process:
                 row_dict = {
                     'CardNo': row[0],
@@ -919,6 +943,7 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
                   f"{mcg_success_count} rows inserted.")
         else:
             print("No records with Processed = 0 found for mcg_clocking_tbl insertion.")
+    return inserted_count, skipped_count, mcg_success_count
 
 def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
     conn_data_emp = connect_data_employee(config)
@@ -946,13 +971,14 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
 
         if not rows:
             print("No pending rows to push (Processed=0).")
-            return 0, 0, 0
+            return 0, 0, 0, []
 
         cursor_orange = conn_orange.cursor()
         update_cursor = conn_data_emp.cursor()
 
         pushed = 0
         skipped = 0
+        pushed_rows = []
         for r in rows:
             row_dict = {
                 'ID': r.get('ID'),
@@ -969,6 +995,7 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
             ok = insert_data_to_mcg_clocking_tbl(row_dict, cursor_orange, update_cursor)
             if ok:
                 pushed += 1
+                pushed_rows.append(row_dict)
             else:
                 skipped += 1
 
@@ -979,7 +1006,7 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
         cursor_orange.close()
         update_cursor.close()
         print(f"Pushed to mcg_clocking_tbl: {pushed} rows, skipped: {skipped}.")
-        return pushed, skipped, len(rows)
+        return pushed, skipped, len(rows), pushed_rows
     finally:
         try:
             conn_data_emp.close()
@@ -997,6 +1024,7 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
 def send_media_group(chatid, message, file_path, file_type, api_url):
     if chatid:
         try:
+            target = str(chatid).strip()
             with open(file_path, 'rb') as f:
                 if file_path.lower().endswith('.csv'):
                     mime_type = 'text/csv'
@@ -1005,7 +1033,11 @@ def send_media_group(chatid, message, file_path, file_type, api_url):
                 else:
                     mime_type = 'application/octet-stream'
                 files = {file_type: (file_path, f.read(), mime_type)}
-                data = {'id': chatid, 'message': message}
+                data = {'message': message}
+                if ("@" in target) or target.replace("-", "").isdigit():
+                    data['id'] = target
+                else:
+                    data['name'] = target
                 response = requests.post(api_url, files=files, data=data)
             if response.status_code == 200:
                 logging.info('Message sent successfully!')
@@ -1025,6 +1057,25 @@ def send_media_group(chatid, message, file_path, file_type, api_url):
                 print(f'Error deleting file {file_path}: {str(e)}')
     else:
         print('No chat ID provided, skipping WhatsApp message sending.')
+
+def send_whatsapp_push_report(config, waid, title, total_transactions, valid_transactions, invalid_transactions, inserted_count, slot, pushed_rows, dry_run=False):
+    if dry_run:
+        return
+    if waid is None or str(waid).strip() == "":
+        return
+    if total_transactions <= 0:
+        return
+    msg = f"{title}\n📥 {total_transactions} | ✅ {valid_transactions} | ❌ {invalid_transactions}\n➕ New Insert: {inserted_count}\n🚀 Completed"
+    df = pd.DataFrame(pushed_rows)
+    if len(df) > 0:
+        filename = f"attendance_push_{slot.replace(':','').replace('T','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        df.to_csv(filename, index=False)
+        send_media_group(waid, msg, filename, 'document', config['whatsapp_api_url'])
+    else:
+        tmp_name = f"attendance_push_{slot.replace(':','').replace('T','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(tmp_name, "w", encoding="utf-8") as f:
+            f.write(msg)
+        send_media_group(waid, msg, tmp_name, 'document', config['whatsapp_api_url'])
 
 # --------------------------------------------------------------------------
 # 7.1 MISSING CLOCK OUT GENERATOR
@@ -1081,7 +1132,7 @@ def main():
     if args.run_10min:
         args.incremental = True
 
-    WAID = args.waid
+    WAID = _resolve_waid(args.waid)
     DRY_RUN = bool(args.dry_run)
     INSERT_TO_MCG_CLOCKING_TBL = args.insert_mcg
     INSERT_TO_TBL_ATTENDANCE_REPORT = args.insert_att
@@ -1101,7 +1152,8 @@ def main():
         return
 
     if args.incremental:
-        WAID = None
+        if not args.run_10min:
+            WAID = None
         if not DRY_RUN:
             INSERT_TO_TBL_ATTENDANCE_REPORT = True
         now = datetime.now()
@@ -1286,20 +1338,43 @@ def main():
     # ----------------------------------------------------------------------
     # Database Insertions (if flagged)
     # ----------------------------------------------------------------------
+    inserted_count = 0
+    skipped_count = 0
+    mcg_success_count = 0
     if INSERT_TO_TBL_ATTENDANCE_REPORT or INSERT_TO_MCG_CLOCKING_TBL:
         if INSERT_TO_MCG_CLOCKING_TBL and conn_orange_temp is None:
             conn_orange_temp = connect_orange_temp(config)
         
         # Use existing EmployeeWorkflow connection for tblAttendanceReport (has ScheduledClockIn/Out columns)
         df_db = df_report[df_report['ClockEvent'] != 'Missing Clock Out'] if 'ClockEvent' in df_report.columns else df_report
-        insert_data(df_db, conn_data_emp, conn_orange_temp, INSERT_TO_TBL_ATTENDANCE_REPORT, INSERT_TO_MCG_CLOCKING_TBL, args.force_replace)
+        inserted_count, skipped_count, mcg_success_count = insert_data(
+            df_db,
+            conn_data_emp,
+            conn_orange_temp,
+            INSERT_TO_TBL_ATTENDANCE_REPORT,
+            INSERT_TO_MCG_CLOCKING_TBL,
+            args.force_replace
+        )
         print("Data inserted into the respective tables successfully.")
 
     if args.run_10min:
         should_push, slot = should_auto_push_now(config, int(args.push_window_minutes), dry_run=DRY_RUN)
         if should_push and slot is not None:
             try:
-                push_pending_to_mcg_clocking_tbl(config, int(args.push_limit), dry_run=DRY_RUN)
+                pushed, skipped, total, pushed_rows = push_pending_to_mcg_clocking_tbl(config, int(args.push_limit), dry_run=DRY_RUN)
+                title = f"📊 Attendance (Incremental)"
+                send_whatsapp_push_report(
+                    config,
+                    WAID,
+                    title,
+                    total_transactions,
+                    valid_transactions,
+                    invalid_transactions,
+                    inserted_count,
+                    slot,
+                    pushed_rows,
+                    dry_run=DRY_RUN
+                )
                 if not DRY_RUN:
                     save_auto_push_state(config, slot, None)
             except Exception as e:

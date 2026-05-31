@@ -1,12 +1,22 @@
-FROM node:20-alpine
+FROM node:20-bullseye-slim
 
 WORKDIR /app
 
-# Install dependencies
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python-is-python3 \
+    ca-certificates \
+    freetds-dev \
+    build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir pymssql pandas requests
+
 COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
 RUN npm install
 
-# Copy backend source (used for initial build; in dev we mount volumes)
 COPY backend ./backend
 COPY tsconfig.node.json tsconfig.json ./
 
@@ -14,5 +24,4 @@ ENV NODE_ENV=development
 
 EXPOSE 5000
 
-# Default command runs backend in watch mode
 CMD ["npm", "run", "server:dev"]
