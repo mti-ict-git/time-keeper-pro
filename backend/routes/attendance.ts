@@ -349,10 +349,13 @@ let attTimer: NodeJS.Timeout | null = null;
 let attPushLimit = process.env.ATTENDANCE_PUSH_LIMIT ? Number(process.env.ATTENDANCE_PUSH_LIMIT) : 5000;
 let attPushWindowMinutes = process.env.ATTENDANCE_PUSH_WINDOW_MINUTES ? Number(process.env.ATTENDANCE_PUSH_WINDOW_MINUTES) : 15;
 let attLookbackMinutes = process.env.ATTENDANCE_LOOKBACK_MINUTES ? Number(process.env.ATTENDANCE_LOOKBACK_MINUTES) : 2;
-let attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
-let attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
-let attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
-let attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
+const attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
+const attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
+const attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
+const attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
+const attUseDbSettings = String(process.env.ATTENDANCE_USE_DB_SETTINGS ?? "")
+  .trim()
+  .toLowerCase() === "true";
 
 function logRunner(event: string, payload: Record<string, unknown> = {}): void {
   const base = { event, at: new Date().toISOString() };
@@ -588,7 +591,7 @@ function scheduleAttendanceInitRetry(delayMs: number): void {
 
 async function initializeAttendanceScheduler(): Promise<void> {
   try {
-    await Promise.all([loadAttendanceRunnerSettings(), ensureAttendanceRunnerLogsTable()]);
+    await Promise.all([attUseDbSettings ? loadAttendanceRunnerSettings() : Promise.resolve(), ensureAttendanceRunnerLogsTable()]);
     scheduleAttendanceNext();
     logRunner("initialized", {
       enabled: attEnabled,
@@ -606,6 +609,7 @@ async function initializeAttendanceScheduler(): Promise<void> {
 
 attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
   res.json({
+    configSource: attUseDbSettings ? "db" : "env",
     running: attRunning,
     enabled: attEnabled,
     intervalMinutes: attIntervalMinutes,
@@ -648,20 +652,40 @@ attendanceRouter.put("/runner/config", async (req: Request, res: Response) => {
     return;
   }
 
-  attEnabled = en;
-  attIntervalMinutes = Math.floor(m);
-  attPushLimit = Math.floor(pl);
-  attPushWindowMinutes = Math.floor(pwm);
-  attLookbackMinutes = Math.floor(lbm);
-  await saveAttendanceRunnerSettings(attEnabled, attIntervalMinutes, attPushLimit, attPushWindowMinutes, attLookbackMinutes);
-  scheduleAttendanceNext();
+  const nextEnabled = en;
+  const nextIntervalMinutes = Math.floor(m);
+  const nextPushLimit = Math.floor(pl);
+  const nextPushWindowMinutes = Math.floor(pwm);
+  const nextLookbackMinutes = Math.floor(lbm);
+
+  await saveAttendanceRunnerSettings(nextEnabled, nextIntervalMinutes, nextPushLimit, nextPushWindowMinutes, nextLookbackMinutes);
+
+  if (attUseDbSettings) {
+    attEnabled = nextEnabled;
+    attIntervalMinutes = nextIntervalMinutes;
+    attPushLimit = nextPushLimit;
+    attPushWindowMinutes = nextPushWindowMinutes;
+    attLookbackMinutes = nextLookbackMinutes;
+    scheduleAttendanceNext();
+  }
+
   res.json({
-    enabled: attEnabled,
-    intervalMinutes: attIntervalMinutes,
-    nextRunAt: attNextRunAt,
-    pushLimit: attPushLimit,
-    pushWindowMinutes: attPushWindowMinutes,
-    lookbackMinutes: attLookbackMinutes,
+    configSource: attUseDbSettings ? "db" : "env",
+    runtime: {
+      enabled: attEnabled,
+      intervalMinutes: attIntervalMinutes,
+      nextRunAt: attNextRunAt,
+      pushLimit: attPushLimit,
+      pushWindowMinutes: attPushWindowMinutes,
+      lookbackMinutes: attLookbackMinutes,
+    },
+    savedToDb: {
+      enabled: nextEnabled,
+      intervalMinutes: nextIntervalMinutes,
+      pushLimit: nextPushLimit,
+      pushWindowMinutes: nextPushWindowMinutes,
+      lookbackMinutes: nextLookbackMinutes,
+    },
   });
 });
 
