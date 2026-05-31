@@ -7,6 +7,12 @@ import argparse
 import os
 import warnings
 import platform
+from datetime import timezone
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
@@ -38,7 +44,9 @@ def parse_arguments():
     parser.add_argument('--push-mcg', action='store_true', help='Push pending Clock In/Out rows to mcg_clocking_tbl (idempotent)')
     parser.add_argument('--push-limit', type=int, default=5000, help='Max rows to push per run when using --push-mcg')
     parser.add_argument('--run-10min', action='store_true', help='Single command: incremental ingest + auto push at 00:00 and 12:00 window')
+    parser.add_argument('--push-now-report', action='store_true', help='Push pending rows to mcg_clocking_tbl now and send WhatsApp report immediately')
     parser.add_argument('--push-window-minutes', type=int, default=15, help='Auto push window size in minutes for --run-10min (default 15)')
+    parser.add_argument('--slot-override', help='Override slot label used for push state/report, e.g. 2026-05-31T12')
     parser.add_argument('--job-name', default='attendance_ingest_v1', help='JobName for dbo.AttendanceJobState')
     parser.add_argument('--initial-backfill-hours', type=int, default=24, help='Initial backfill hours when no watermark exists')
     parser.add_argument('--lookback-minutes', type=int, default=2, help='Safety lookback minutes to re-read recent scans')
@@ -198,25 +206,49 @@ def _parse_int_set(csv_value, default_values):
             continue
     return out if out else set(default_values)
 
+def _get_push_timezone():
+    tz_name = (os.getenv("ATTENDANCE_PUSH_TIMEZONE") or os.getenv("MCG_PUSH_TIMEZONE") or "Asia/Makassar").strip()
+    if ZoneInfo is not None:
+        try:
+            return ZoneInfo(tz_name)
+        except Exception:
+            pass
+    return timezone(timedelta(hours=8), name="WITA")
+
+def _push_now():
+    return datetime.now(_get_push_timezone())
+
 def _auto_push_slot(now_dt):
     return now_dt.strftime('%Y-%m-%d') + f"T{now_dt.hour:02d}"
 
+def _latest_due_push_slot(now_dt, push_hours):
+    local_now = now_dt.replace(minute=0, second=0, microsecond=0)
+    candidate = None
+    for hour in sorted(push_hours):
+        slot_dt = local_now.replace(hour=int(hour))
+        if slot_dt <= now_dt:
+            candidate = slot_dt
+    if candidate is not None:
+        return candidate
+    if not push_hours:
+        return None
+    prev_day = (now_dt - timedelta(days=1)).replace(minute=0, second=0, microsecond=0)
+    return prev_day.replace(hour=max(push_hours))
+
 def should_auto_push_now(config, window_minutes, dry_run=False):
     push_hours = _parse_int_set(os.getenv("MCG_PUSH_HOURS"), {0, 12})
-    window_minutes = max(1, int(window_minutes))
-    now_dt = datetime.now()
-    if now_dt.hour not in push_hours:
+    now_dt = _push_now()
+    slot_dt = _latest_due_push_slot(now_dt, push_hours)
+    if slot_dt is None:
         return False, None
-    if now_dt.minute < 0 or now_dt.minute >= window_minutes:
-        return False, None
+    slot = _auto_push_slot(slot_dt)
     if dry_run:
-        return True, _auto_push_slot(now_dt)
+        return True, slot
 
     conn_state = connect_data_employee(config)
     try:
         ensure_attendance_job_state_table(conn_state)
         state = load_attendance_job_state(conn_state, "mcg_push_v1")
-        slot = _auto_push_slot(now_dt)
         last_slot = None if not state else state.get("LastProcessedCardNo")
         if last_slot is not None and str(last_slot) == slot:
             return False, slot
@@ -1058,14 +1090,21 @@ def send_media_group(chatid, message, file_path, file_type, api_url):
     else:
         print('No chat ID provided, skipping WhatsApp message sending.')
 
-def send_whatsapp_push_report(config, waid, title, total_transactions, valid_transactions, invalid_transactions, inserted_count, slot, pushed_rows, dry_run=False):
+def send_whatsapp_push_report(config, waid, title, total_transactions, valid_transactions, invalid_transactions, inserted_count, slot, pushed_rows, pushed_count, push_total, dry_run=False):
     if dry_run:
         return
     if waid is None or str(waid).strip() == "":
         return
-    if total_transactions <= 0:
+    if push_total <= 0 and pushed_count <= 0:
         return
-    msg = f"{title}\n📥 {total_transactions} | ✅ {valid_transactions} | ❌ {invalid_transactions}\n➕ New Insert: {inserted_count}\n🚀 Completed"
+    msg = (
+        f"{title}\n"
+        f"📥 Scan Retrieved: {total_transactions} | ✅ Valid: {valid_transactions} | ❌ Invalid: {invalid_transactions}\n"
+        f"➕ New Insert: {inserted_count}\n"
+        f"🚀 Push Evaluated: {push_total} | Success: {pushed_count}\n"
+        f"🕒 Slot: {slot}\n"
+        f"Completed"
+    )
     df = pd.DataFrame(pushed_rows)
     if len(df) > 0:
         filename = f"attendance_push_{slot.replace(':','').replace('T','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
@@ -1146,6 +1185,34 @@ def main():
         INSERT_TO_MCG_CLOCKING_TBL = False
         INSERT_TO_TBL_ATTENDANCE_REPORT = False
         args.force_replace = False
+
+    if args.push_now_report:
+        slot = str(args.slot_override).strip() if args.slot_override else _auto_push_slot(_push_now())
+        try:
+            pushed, skipped, total, pushed_rows = push_pending_to_mcg_clocking_tbl(config, int(args.push_limit), dry_run=DRY_RUN)
+            title = "📊 Attendance (Manual Push)"
+            send_whatsapp_push_report(
+                config,
+                WAID,
+                title,
+                0,
+                0,
+                0,
+                0,
+                slot,
+                pushed_rows,
+                pushed,
+                total,
+                dry_run=DRY_RUN
+            )
+            if not DRY_RUN:
+                save_auto_push_state(config, slot, None)
+            print(f"Manual push completed: pushed={pushed}, skipped={skipped}, total={total}, slot={slot}")
+            return
+        except Exception as e:
+            if not DRY_RUN:
+                save_auto_push_state(config, slot, str(e))
+            raise
 
     if args.push_mcg and (not args.run_10min):
         push_pending_to_mcg_clocking_tbl(config, int(args.push_limit), dry_run=DRY_RUN)
@@ -1373,6 +1440,8 @@ def main():
                     inserted_count,
                     slot,
                     pushed_rows,
+                    pushed,
+                    total,
                     dry_run=DRY_RUN
                 )
                 if not DRY_RUN:

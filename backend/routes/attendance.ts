@@ -385,6 +385,47 @@ function parseRunnerSummary(stdout: string): Record<string, unknown> {
   return out;
 }
 
+function runAttendancePythonWithArgs(args: string[]): Promise<AttendanceRunLog> {
+  const startedAt = new Date();
+  return new Promise<AttendanceRunLog>((resolve) => {
+    const child = spawn(attPythonExe, args, { cwd: process.cwd(), env: process.env, windowsHide: true });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d: Buffer) => {
+      out += d.toString("utf8");
+    });
+    child.stderr.on("data", (d: Buffer) => {
+      err += d.toString("utf8");
+    });
+    child.on("error", (e) => {
+      const finishedAt = new Date();
+      resolve({
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        success: false,
+        exitCode: null,
+        error: e instanceof Error ? e.message : String(e),
+        stdout: out,
+        stderr: err,
+      });
+    });
+    child.on("close", (code) => {
+      const finishedAt = new Date();
+      resolve({
+        startedAt,
+        finishedAt,
+        durationMs: finishedAt.getTime() - startedAt.getTime(),
+        success: code === 0,
+        exitCode: typeof code === "number" ? code : null,
+        error: code === 0 ? undefined : `Exited with code ${String(code)}`,
+        stdout: out,
+        stderr: err,
+      });
+    });
+  });
+}
+
 async function ensureAttendanceRunnerSettingsTable(): Promise<void> {
   const pool = await getPool();
   await pool.request().query(
@@ -477,7 +518,6 @@ async function saveAttendanceRunnerLog(log: AttendanceRunLog): Promise<void> {
 }
 
 async function runAttendancePython(): Promise<AttendanceRunLog> {
-  const startedAt = new Date();
   const scriptAbs = path.resolve(process.cwd(), attScriptRel);
   const args: string[] = [
     scriptAbs,
@@ -494,44 +534,7 @@ async function runAttendancePython(): Promise<AttendanceRunLog> {
   if (attWaid) {
     args.push("--waid", attWaid);
   }
-
-  return await new Promise<AttendanceRunLog>((resolve) => {
-    const child = spawn(attPythonExe, args, { cwd: process.cwd(), env: process.env, windowsHide: true });
-    let out = "";
-    let err = "";
-    child.stdout.on("data", (d: Buffer) => {
-      out += d.toString("utf8");
-    });
-    child.stderr.on("data", (d: Buffer) => {
-      err += d.toString("utf8");
-    });
-    child.on("error", (e) => {
-      const finishedAt = new Date();
-      resolve({
-        startedAt,
-        finishedAt,
-        durationMs: finishedAt.getTime() - startedAt.getTime(),
-        success: false,
-        exitCode: null,
-        error: e instanceof Error ? e.message : String(e),
-        stdout: out,
-        stderr: err,
-      });
-    });
-    child.on("close", (code) => {
-      const finishedAt = new Date();
-      resolve({
-        startedAt,
-        finishedAt,
-        durationMs: finishedAt.getTime() - startedAt.getTime(),
-        success: code === 0,
-        exitCode: typeof code === "number" ? code : null,
-        error: code === 0 ? undefined : `Exited with code ${String(code)}`,
-        stdout: out,
-        stderr: err,
-      });
-    });
-  });
+  return await runAttendancePythonWithArgs(args);
 }
 
 async function runAttendanceNow(): Promise<void> {
@@ -627,6 +630,53 @@ attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
 attendanceRouter.post("/runner/run", async (_req: Request, res: Response) => {
   await runAttendanceNow();
   res.json({ lastRun: attLastRun });
+});
+
+attendanceRouter.post("/push-now", async (req: Request, res: Response) => {
+  if (attRunning) {
+    res.status(409).json({ error: "Attendance runner is already running" });
+    return;
+  }
+
+  const pushLimitRaw = Number((req.body?.pushLimit as unknown) ?? attPushLimit);
+  const dryRun = Boolean(req.body?.dryRun);
+  const waidOverride = typeof req.body?.waid === "string" ? req.body.waid.trim() : "";
+  const slotOverride = typeof req.body?.slotOverride === "string" ? req.body.slotOverride.trim() : "";
+
+  if (!Number.isFinite(pushLimitRaw) || pushLimitRaw <= 0) {
+    res.status(400).json({ error: "pushLimit must be a positive number" });
+    return;
+  }
+
+  const pushLimit = Math.floor(pushLimitRaw);
+  const scriptAbs = path.resolve(process.cwd(), attScriptRel);
+  const args: string[] = [scriptAbs, "--push-now-report", "--push-limit", String(pushLimit)];
+  if (dryRun) args.push("--dry-run");
+  if (waidOverride) args.push("--waid", waidOverride);
+  else if (attWaid) args.push("--waid", attWaid);
+  if (slotOverride) args.push("--slot-override", slotOverride);
+
+  attRunning = true;
+  try {
+    const log = await runAttendancePythonWithArgs(args);
+    attLastRun = log;
+    await saveAttendanceRunnerLog(log);
+    const summary = parseRunnerSummary(log.stdout ?? "");
+    res.status(log.success ? 200 : 500).json({
+      mode: "push-now",
+      dryRun,
+      pushLimit,
+      waid: waidOverride || attWaid || null,
+      slotOverride: slotOverride || null,
+      success: log.success,
+      exitCode: log.exitCode,
+      error: log.error ?? null,
+      summary,
+      lastRun: log,
+    });
+  } finally {
+    attRunning = false;
+  }
 });
 
 attendanceRouter.put("/runner/config", async (req: Request, res: Response) => {
