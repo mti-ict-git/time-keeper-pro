@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import sql from "mssql";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { getPool } from "../db";
 import { getTableColumns } from "../utils/introspection";
@@ -353,6 +354,34 @@ let attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/atte
 let attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
 let attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
 
+function logRunner(event: string, payload: Record<string, unknown> = {}): void {
+  const base = { event, at: new Date().toISOString() };
+  console.log(`[AttendanceRunner] ${JSON.stringify({ ...base, ...payload })}`);
+}
+
+function parseRunnerSummary(stdout: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const mTotal = stdout.match(/Total transactions retrieved:\s*(\d+)/i);
+  const mProcessed = stdout.match(/Total transactions processed.*:\s*(\d+)/i);
+  const mValid = stdout.match(/Valid transactions.*:\s*(\d+)/i);
+  const mInvalid = stdout.match(/Invalid transactions.*:\s*(\d+)/i);
+  const mInsert = stdout.match(/Data insertion to tblAttendanceReport completed:\s*(\d+)\s+new,\s*(\d+)\s+skipped/i);
+  const mPush = stdout.match(/Pushed to mcg_clocking_tbl:\s*(\d+)\s+rows,\s*skipped:\s*(\d+)/i);
+  if (mTotal) out.totalRetrieved = Number(mTotal[1]);
+  if (mProcessed) out.totalProcessed = Number(mProcessed[1]);
+  if (mValid) out.valid = Number(mValid[1]);
+  if (mInvalid) out.invalid = Number(mInvalid[1]);
+  if (mInsert) {
+    out.newInserted = Number(mInsert[1]);
+    out.insertSkipped = Number(mInsert[2]);
+  }
+  if (mPush) {
+    out.pushed = Number(mPush[1]);
+    out.pushSkipped = Number(mPush[2]);
+  }
+  return out;
+}
+
 async function ensureAttendanceRunnerSettingsTable(): Promise<void> {
   const pool = await getPool();
   await pool.request().query(
@@ -505,10 +534,31 @@ async function runAttendancePython(): Promise<AttendanceRunLog> {
 async function runAttendanceNow(): Promise<void> {
   if (attRunning) return;
   attRunning = true;
+  const runId = randomUUID();
+  logRunner("run_start", {
+    runId,
+    enabled: attEnabled,
+    intervalMinutes: attIntervalMinutes,
+    pushLimit: attPushLimit,
+    pushWindowMinutes: attPushWindowMinutes,
+    lookbackMinutes: attLookbackMinutes,
+    script: attScriptRel,
+    jobName: attJobName,
+  });
   try {
     const log = await runAttendancePython();
     attLastRun = log;
     await saveAttendanceRunnerLog(log);
+    const summary = parseRunnerSummary(log.stdout ?? "");
+    logRunner("run_end", {
+      runId,
+      success: log.success,
+      exitCode: log.exitCode,
+      durationMs: log.durationMs,
+      nextRunAt: attNextRunAt ? attNextRunAt.toISOString() : null,
+      ...summary,
+      error: log.success ? null : log.error ?? null,
+    });
   } finally {
     attRunning = false;
   }
@@ -518,10 +568,12 @@ function scheduleAttendanceNext(): void {
   if (attTimer) clearTimeout(attTimer);
   if (!attEnabled) {
     attNextRunAt = null;
+    logRunner("disabled", {});
     return;
   }
   const ms = Math.max(1, attIntervalMinutes) * 60 * 1000;
   attNextRunAt = new Date(Date.now() + ms);
+  logRunner("scheduled", { nextRunAt: attNextRunAt.toISOString(), intervalMinutes: attIntervalMinutes });
   attTimer = setTimeout(async () => {
     await runAttendanceNow();
     scheduleAttendanceNext();
@@ -538,6 +590,13 @@ async function initializeAttendanceScheduler(): Promise<void> {
   try {
     await Promise.all([loadAttendanceRunnerSettings(), ensureAttendanceRunnerLogsTable()]);
     scheduleAttendanceNext();
+    logRunner("initialized", {
+      enabled: attEnabled,
+      intervalMinutes: attIntervalMinutes,
+      nextRunAt: attNextRunAt ? attNextRunAt.toISOString() : null,
+      script: attScriptRel,
+      jobName: attJobName,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[AttendanceRunner] Scheduler initialization failed:", message);
