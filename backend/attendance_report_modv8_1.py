@@ -102,6 +102,26 @@ def get_config():
 
     whatsapp_api_url = os.getenv("WHATSAPP_API_URL") or "http://10.60.10.46:8192/send-group-message"
 
+    tr_controller_list_raw = os.getenv("TR_CONTROLLER_LIST")
+    if tr_controller_list_raw is not None and str(tr_controller_list_raw).strip() != "":
+        raw = str(tr_controller_list_raw).strip()
+        if raw.strip().lower() in ("all", "*", "any"):
+            tr_controller_list = []
+        else:
+            tr_controller_list = [x.strip() for x in raw.split(",") if x.strip()]
+    else:
+        tr_controller_list = [
+            'FR-Acid Halte-4626',
+            'FR-Acid Roaster-4102',
+            'FR-CCP Office 1 Temp',
+            'FR-CCP Office 2 Temp',
+            'FR-Chloride Office-5633',
+            'FR-Chloride Pos Security-5633',
+            'FR-Pyrite Office-5635',
+            'FR-Pyrite Toilet-3104',
+            'FR-Pyrite Warehouse-4522'
+        ]
+
     config = {
         'conn_str_data_db': {
             'server': data_server,
@@ -121,17 +141,7 @@ def get_config():
             'user': orange_user,
             'password': orange_pwd
         },
-        'tr_controller_list': [
-            'FR-Acid Halte-4626',
-            'FR-Acid Roaster-4102',
-            'FR-CCP Office 1 Temp',
-            'FR-CCP Office 2 Temp',
-            'FR-Chloride Office-5633',
-            'FR-Chloride Pos Security-5633',
-            'FR-Pyrite Office-5635',
-            'FR-Pyrite Toilet-3104',
-            'FR-Pyrite Warehouse-4522'
-        ],
+        'tr_controller_list': tr_controller_list,
         # Set manual working hours to None if you want dynamic working hours.
         'MANUAL_TIME_IN': None,
         'MANUAL_TIME_OUT': None,
