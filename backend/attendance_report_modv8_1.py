@@ -1351,7 +1351,7 @@ def main():
     print("Connected to EmployeeWorkflow.")
 
     conn_orange_temp = None
-    if (not DRY_RUN) and (INSERT_TO_MCG_CLOCKING_TBL or not (config['MANUAL_TIME_IN'] and config['MANUAL_TIME_OUT'])):
+    if (not DRY_RUN) and INSERT_TO_MCG_CLOCKING_TBL:
         conn_orange_temp = connect_orange_temp(config)
         print("Connected to ORANGE-TEMP.")
 
@@ -1397,12 +1397,21 @@ def main():
         dry_run=DRY_RUN,
         use_filo=USE_FILO
     )
-    # Filter out rows with 'No Shift Data'
-    df_processed = df_processed[df_processed['ClockEvent'] != 'No Shift Data']
+    df_processed_all = df_processed
+    no_shift_count = 0
+    if df_processed_all is not None and 'ClockEvent' in df_processed_all.columns:
+        no_shift_count = int((df_processed_all['ClockEvent'] == 'No Shift Data').sum())
+
+    df_processed = df_processed_all[df_processed_all['ClockEvent'] != 'No Shift Data']
     print("Clock event logic applied.")
 
     # Rename for clarity
     df_report = df_processed.rename(columns={
+        'TrDateTime': 'Transaction Date Time',
+        'TrDate': 'Transaction Date',
+        'dtTransaction': 'Transaction Status'
+    })
+    df_report_for_db = df_processed_all.rename(columns={
         'TrDateTime': 'Transaction Date Time',
         'TrDate': 'Transaction Date',
         'dtTransaction': 'Transaction Status'
@@ -1417,6 +1426,7 @@ def main():
 
     print(f"Total transactions retrieved: {total_transactions}")
     print(f"Total transactions processed (excluding 'No Shift Data'): {total_processed}")
+    print(f"No Shift Data: {no_shift_count}")
     print(f"Valid transactions (Clock In/Out): {valid_transactions}")
     print(f"Invalid transactions (Outside Range/Mid Scans, etc.): {invalid_transactions}")
 
@@ -1450,7 +1460,7 @@ def main():
             conn_orange_temp = connect_orange_temp(config)
         
         # Use existing EmployeeWorkflow connection for tblAttendanceReport (has ScheduledClockIn/Out columns)
-        df_db = df_report[df_report['ClockEvent'] != 'Missing Clock Out'] if 'ClockEvent' in df_report.columns else df_report
+        df_db = df_report_for_db[df_report_for_db['ClockEvent'] != 'Missing Clock Out'] if 'ClockEvent' in df_report_for_db.columns else df_report_for_db
         inserted_count, skipped_count, mcg_success_count, insert_error_count, insert_last_ok_dt, insert_last_ok_card = insert_data(
             df_db,
             conn_data_emp,
