@@ -700,8 +700,10 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
         conn_data_db: Database connection for schedule lookup
         force_replace: If True, delete existing record before inserting
     
-    Returns True if inserted a new record,
-    Returns False if skipped (already exists or error).
+    Returns "inserted" if inserted a new record,
+    Returns "replaced" if force replaced an existing record,
+    Returns "exists" if skipped because it already exists,
+    Returns "error" if failed.
     """
     try:
         # Convert Python datetime to string in the same format as your DB uses.
@@ -728,6 +730,7 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
         existing_count = cursor.fetchone()[0]
 
         # 2) If found and force_replace is True, delete existing record
+        did_replace = False
         if existing_count > 0 and force_replace:
             cursor.execute("""
                 DELETE FROM dbo.tblAttendanceReport
@@ -746,6 +749,7 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
                 f"for StaffNo={row['StaffNo']}, TrDateTime={transaction_datetime_str}, "
                 f"ClockEvent={row['ClockEvent']} (force replace enabled)."
             )
+            did_replace = True
         # 3) If found and force_replace is False, skip
         elif existing_count > 0:
             logging.info(
@@ -753,7 +757,7 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
                 f"for StaffNo={row['StaffNo']}, TrDateTime={transaction_datetime_str}, "
                 f"ClockEvent={row['ClockEvent']}."
             )
-            return False
+            return "exists"
 
         # 4) Retrieve schedule data for historical purposes
         scheduled_clock_in = None
@@ -817,14 +821,14 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
             scheduled_clock_out_str
         ))
         logging.info(f"Inserted into tblAttendanceReport for StaffNo={row['StaffNo']} at {transaction_datetime_str}")
-        return True
+        return "replaced" if did_replace else "inserted"
 
     except Exception as e:
         logging.error(
             f"Failed to insert into tblAttendanceReport for StaffNo={row['StaffNo']} "
             f"at {row['Transaction Date Time']}. Error: {str(e)}"
         )
-        return False
+        return "error"
 
 
 def insert_data_to_mcg_clocking_tbl(row, cursor, update_cursor):
@@ -906,23 +910,37 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
     inserted_count = 0
     skipped_count = 0
     mcg_success_count = 0
+    error_count = 0
+    last_ok_dt = None
+    last_ok_card = None
 
     # Insert into tblAttendanceReport first, if requested.
     if insert_att:
         cursor_data_db = conn_data_db.cursor()
         
-        for _, row in df.iterrows():
-            was_inserted = insert_data_to_tbl_attendance_report(row, cursor_data_db, conn_data_db, force_replace)
-            if was_inserted:
+        if df is not None and len(df) > 0:
+            df_iter = df.sort_values(by=['Transaction Date Time', 'CardNo'], ascending=[True, True])
+        else:
+            df_iter = df
+
+        for _, row in df_iter.iterrows():
+            status = insert_data_to_tbl_attendance_report(row, cursor_data_db, conn_data_db, force_replace)
+            if status in ("inserted", "replaced", "exists"):
+                last_ok_dt = pd.to_datetime(row['Transaction Date Time']).to_pydatetime()
+                last_ok_card = str(row['CardNo'])
+            if status in ("inserted", "replaced"):
                 inserted_count += 1
-            else:
+            elif status == "exists":
                 skipped_count += 1
+            else:
+                error_count += 1
+                break
         
         conn_data_db.commit()
         cursor_data_db.close()
         
         print(f"Data insertion to tblAttendanceReport completed: "
-              f"{inserted_count} new, {skipped_count} skipped (already exist or error).")
+              f"{inserted_count} new, {skipped_count} skipped (already exist), {error_count} errors.")
 
     # Next, process records from tblAttendanceReport with Processed = 0, if requested.
     if insert_mcg:
@@ -975,7 +993,7 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
                   f"{mcg_success_count} rows inserted.")
         else:
             print("No records with Processed = 0 found for mcg_clocking_tbl insertion.")
-    return inserted_count, skipped_count, mcg_success_count
+    return inserted_count, skipped_count, mcg_success_count, error_count, last_ok_dt, last_ok_card
 
 def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
     conn_data_emp = connect_data_employee(config)
@@ -1180,6 +1198,9 @@ def main():
     watermark_dt = None
     watermark_card_no = None
     job_state_prev = None
+    insert_error_count = 0
+    insert_last_ok_dt = None
+    insert_last_ok_card = None
 
     if DRY_RUN:
         INSERT_TO_MCG_CLOCKING_TBL = False
@@ -1347,6 +1368,12 @@ def main():
     df_transactions['TrDate'] = pd.to_datetime(df_transactions['TrDate']).dt.date
     df_transactions.sort_values(by=['TrDateTime', 'CardNo'], inplace=True)
     print("DataFrame columns converted to datetime and sorted.")
+    last_seen_dt = None
+    last_seen_card = None
+    if df_transactions is not None and len(df_transactions) > 0:
+        last_row = df_transactions.sort_values(by=['TrDateTime', 'CardNo']).iloc[-1]
+        last_seen_dt = pd.to_datetime(last_row['TrDateTime']).to_pydatetime()
+        last_seen_card = str(last_row['CardNo'])
 
     lock_cache = {}
 
@@ -1414,7 +1441,7 @@ def main():
         
         # Use existing EmployeeWorkflow connection for tblAttendanceReport (has ScheduledClockIn/Out columns)
         df_db = df_report[df_report['ClockEvent'] != 'Missing Clock Out'] if 'ClockEvent' in df_report.columns else df_report
-        inserted_count, skipped_count, mcg_success_count = insert_data(
+        inserted_count, skipped_count, mcg_success_count, insert_error_count, insert_last_ok_dt, insert_last_ok_card = insert_data(
             df_db,
             conn_data_emp,
             conn_orange_temp,
@@ -1455,18 +1482,28 @@ def main():
             ensure_attendance_job_state_table(conn_data_emp)
             last_dt_next = None
             last_card_next = None
-            if df_transactions is not None and len(df_transactions) > 0:
-                last_row = df_transactions.sort_values(by=['TrDateTime', 'CardNo']).iloc[-1]
-                last_dt_next = pd.to_datetime(last_row['TrDateTime']).to_pydatetime()
-                last_card_next = str(last_row['CardNo'])
-            else:
-                if job_state_prev and job_state_prev.get('LastProcessedTrDateTime') is not None:
+            if insert_error_count > 0:
+                last_dt_next = insert_last_ok_dt
+                last_card_next = insert_last_ok_card
+                if last_dt_next is None and job_state_prev and job_state_prev.get('LastProcessedTrDateTime') is not None:
                     prev_dt = job_state_prev.get('LastProcessedTrDateTime')
                     if isinstance(prev_dt, datetime):
                         last_dt_next = prev_dt
-                if job_state_prev and job_state_prev.get('LastProcessedCardNo') is not None:
+                if last_card_next is None and job_state_prev and job_state_prev.get('LastProcessedCardNo') is not None:
                     last_card_next = str(job_state_prev.get('LastProcessedCardNo'))
-            save_attendance_job_state(conn_data_emp, job_name, last_dt_next, last_card_next, datetime.now(), None)
+                save_attendance_job_state(conn_data_emp, job_name, last_dt_next, last_card_next, datetime.now(), f"insert_errors={insert_error_count}")
+            else:
+                if last_seen_dt is not None:
+                    last_dt_next = last_seen_dt
+                    last_card_next = last_seen_card
+                else:
+                    if job_state_prev and job_state_prev.get('LastProcessedTrDateTime') is not None:
+                        prev_dt = job_state_prev.get('LastProcessedTrDateTime')
+                        if isinstance(prev_dt, datetime):
+                            last_dt_next = prev_dt
+                    if job_state_prev and job_state_prev.get('LastProcessedCardNo') is not None:
+                        last_card_next = str(job_state_prev.get('LastProcessedCardNo'))
+                save_attendance_job_state(conn_data_emp, job_name, last_dt_next, last_card_next, datetime.now(), None)
         except Exception as e:
             try:
                 ensure_attendance_job_state_table(conn_data_emp)
