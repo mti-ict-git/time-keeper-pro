@@ -723,6 +723,19 @@ def insert_data_to_tbl_attendance_report(row, cursor, conn_data_db=None, force_r
         tr_controller = str(row.get('TrController') or '')
         clock_event = str(row.get('ClockEvent') or '')
 
+        if clock_event and clock_event != 'No Shift Data':
+            cursor.execute("""
+                DELETE FROM dbo.tblAttendanceReport
+                WHERE StaffNo = %s
+                  AND TrDateTime = %s
+                  AND TrController = %s
+                  AND ClockEvent = 'No Shift Data'
+            """, (
+                staff_no,
+                transaction_datetime_str,
+                tr_controller,
+            ))
+
         # 1) Check if this record already exists by StaffNo + TrDateTime + TrController + ClockEvent
         cursor.execute("""
             SELECT COUNT(*)

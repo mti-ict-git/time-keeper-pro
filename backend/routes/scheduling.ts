@@ -239,13 +239,20 @@ async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[]): Pro
   const orangeSchema = process.env.ORANGE_PROC_SCHEMA && process.env.ORANGE_PROC_SCHEMA.length ? String(process.env.ORANGE_PROC_SCHEMA) : "dbo";
   const orangeDayTypeProc = process.env.ORANGE_DAY_TYPE_PROC && process.env.ORANGE_DAY_TYPE_PROC.length ? String(process.env.ORANGE_DAY_TYPE_PROC) : "sp_it_get_day_type";
   const orangeSiteCode = process.env.ORANGE_SITE_CODE && process.env.ORANGE_SITE_CODE.length ? String(process.env.ORANGE_SITE_CODE) : "MTI";
+  const orangeCompanyIdDefault =
+    process.env.ORANGE_COMPANY_ID_DEFAULT && process.env.ORANGE_COMPANY_ID_DEFAULT.length
+      ? String(process.env.ORANGE_COMPANY_ID_DEFAULT)
+      : orangeSiteCode;
+  const orangeCompanyIdMtibj =
+    process.env.ORANGE_COMPANY_ID_MTIBJ && process.env.ORANGE_COMPANY_ID_MTIBJ.length ? String(process.env.ORANGE_COMPANY_ID_MTIBJ) : "MTIB";
   const dayTypeQualified = `[${orangeSchema}].[${orangeDayTypeProc}]`;
 
   const pool = await getOrangePool();
   const request = pool.request();
   request.input("employeeIds", sql.NVarChar, employeeIds.join(","));
   request.input("date", sql.NVarChar, date);
-  request.input("siteCode", sql.NVarChar, orangeSiteCode);
+  request.input("companyIdDefault", sql.NVarChar, orangeCompanyIdDefault);
+  request.input("companyIdMtibj", sql.NVarChar, orangeCompanyIdMtibj);
 
   const q = `
     SELECT
@@ -262,7 +269,7 @@ async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[]): Pro
     ) AS ids
     OUTER APPLY (
       SELECT TOP 1 day_type, description, time_in, time_out, next_day
-      FROM ${dayTypeQualified}(@siteCode, ids.employee_id, @date)
+      FROM ${dayTypeQualified}(CASE WHEN ids.employee_id LIKE 'MTIBJ%' THEN @companyIdMtibj ELSE @companyIdDefault END, ids.employee_id, @date)
     ) AS dt
     ORDER BY ids.employee_id ASC
   `;
@@ -913,6 +920,137 @@ schedulingRouter.post("/by-date/prefetch/run", async (_req: Request, res: Respon
   res.json({ lastRun: orangePrefetchLastRun });
 });
 
+schedulingRouter.post("/by-date/prefetch/backfill", async (req: Request, res: Response) => {
+  const from = parseIsoDateParam((req.body as { from?: unknown })?.from);
+  const to = parseIsoDateParam((req.body as { to?: unknown })?.to);
+  const prefixRaw = String((req.body as { prefix?: unknown })?.prefix ?? "MTIBJ").trim();
+  const prefix = prefixRaw.toUpperCase();
+
+  if (!from || !to) {
+    res.status(400).json({ error: "from/to is required (YYYY-MM-DD)" });
+    return;
+  }
+  if (to < from) {
+    res.status(400).json({ error: "to must be >= from" });
+    return;
+  }
+
+  const fromDate = new Date(`${from}T00:00:00Z`);
+  const toDate = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    res.status(400).json({ error: "Invalid from/to" });
+    return;
+  }
+
+  const maxDays = 120;
+  const days = Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  if (days <= 0 || days > maxDays) {
+    res.status(400).json({ error: `Range too large (max ${maxDays} days)` });
+    return;
+  }
+
+  if (orangePrefetchRunning) {
+    res.status(409).json({ error: "Prefetch is running" });
+    return;
+  }
+
+  orangePrefetchRunning = true;
+  const startedAt = Date.now();
+  const timestamp = new Date();
+  try {
+    const allEmployeeIds = await fetchOrangeEmployeeIds();
+    const employeeIds = allEmployeeIds.filter((id) => id.toUpperCase().startsWith(prefix));
+    if (employeeIds.length === 0) {
+      res.status(400).json({ error: `No employees matched prefix ${prefix}` });
+      return;
+    }
+
+    const dates: string[] = [];
+    for (let d = 0; d < days; d += 1) {
+      dates.push(addDaysIsoDate(from, d));
+    }
+
+    let inserted = 0;
+    let updated = 0;
+    const chunkSize = 1000;
+    for (const date of dates) {
+      for (let i = 0; i < employeeIds.length; i += chunkSize) {
+        const chunk = employeeIds.slice(i, i + chunkSize);
+        const orangeRows = await fetchOrangeDayTypeBatch(date, chunk);
+        const fetchedAt = new Date().toISOString();
+        const upsertRows: OrangeScheduleDailyUpsert[] = orangeRows.map((r) => {
+          const employeeId = String(r.employee_id ?? "").trim();
+          const dayType = r.day_type ? String(r.day_type) : "";
+          const description = r.description ? String(r.description) : "";
+          const timeIn = toTimeHmsOrNull(formatTime(r.time_in));
+          const timeOut = toTimeHmsOrNull(formatTime(r.time_out));
+          const nextDay = toBoolNextDay(r.next_day);
+          const hashInput = [employeeId, date, dayType, description, timeIn ?? "", timeOut ?? "", nextDay ? "1" : "0"].join("|");
+          return {
+            staffNo: employeeId,
+            shiftDate: date,
+            timeIn,
+            timeOut,
+            nextDay,
+            dayType,
+            description,
+            fetchedAt,
+            sourceHash: sha256Hex(hashInput),
+          };
+        });
+        const upserted = await upsertOrangeScheduleDaily(upsertRows);
+        inserted += upserted.inserted;
+        updated += upserted.updated;
+      }
+    }
+
+    orangePrefetchLastRun = {
+      timestamp,
+      dates,
+      totalEmployees: employeeIds.length,
+      inserted,
+      updated,
+      durationMs: Date.now() - startedAt,
+      success: true,
+    };
+    await saveOrangePrefetchLog({
+      timestamp,
+      dates,
+      totalEmployees: employeeIds.length,
+      inserted,
+      updated,
+      durationMs: Date.now() - startedAt,
+      success: true,
+    });
+    res.json({ lastRun: orangePrefetchLastRun });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    orangePrefetchLastRun = {
+      timestamp,
+      dates: [],
+      totalEmployees: 0,
+      inserted: 0,
+      updated: 0,
+      durationMs: Date.now() - startedAt,
+      success: false,
+      error: message,
+    };
+    await saveOrangePrefetchLog({
+      timestamp,
+      dates: [`${from}..${to}`],
+      totalEmployees: 0,
+      inserted: 0,
+      updated: 0,
+      durationMs: Date.now() - startedAt,
+      success: false,
+      error: message,
+    });
+    res.status(500).json({ error: message });
+  } finally {
+    orangePrefetchRunning = false;
+  }
+});
+
 schedulingRouter.put("/by-date/prefetch/config", async (req: Request, res: Response) => {
   const intervalMinutes = Number((req.body as { intervalMinutes?: unknown })?.intervalMinutes ?? 0);
   const enabled = Boolean((req.body as { enabled?: unknown })?.enabled);
@@ -1002,13 +1140,20 @@ schedulingRouter.get("/orange/day-type", async (req: Request, res: Response) => 
     const orangeSchema = process.env.ORANGE_PROC_SCHEMA && process.env.ORANGE_PROC_SCHEMA.length ? String(process.env.ORANGE_PROC_SCHEMA) : "dbo";
     const orangeDayTypeProc = process.env.ORANGE_DAY_TYPE_PROC && process.env.ORANGE_DAY_TYPE_PROC.length ? String(process.env.ORANGE_DAY_TYPE_PROC) : "sp_it_get_day_type";
     const orangeSiteCode = process.env.ORANGE_SITE_CODE && process.env.ORANGE_SITE_CODE.length ? String(process.env.ORANGE_SITE_CODE) : "MTI";
+    const orangeCompanyIdDefault =
+      process.env.ORANGE_COMPANY_ID_DEFAULT && process.env.ORANGE_COMPANY_ID_DEFAULT.length
+        ? String(process.env.ORANGE_COMPANY_ID_DEFAULT)
+        : orangeSiteCode;
+    const orangeCompanyIdMtibj =
+      process.env.ORANGE_COMPANY_ID_MTIBJ && process.env.ORANGE_COMPANY_ID_MTIBJ.length ? String(process.env.ORANGE_COMPANY_ID_MTIBJ) : "MTIB";
+    const orangeCompanyId = employeeId.toUpperCase().startsWith("MTIBJ") ? orangeCompanyIdMtibj : orangeCompanyIdDefault;
     const dayTypeQualified = `[${orangeSchema}].[${orangeDayTypeProc}]`;
 
     const pool = await getOrangePool();
     const request = pool.request();
     request.input("employeeId", sql.NVarChar, employeeId);
     request.input("date", sql.NVarChar, date);
-    request.input("siteCode", sql.NVarChar, orangeSiteCode);
+    request.input("companyId", sql.NVarChar, orangeCompanyId);
     const q = `
       SELECT TOP 1
         @employeeId AS employee_id,
@@ -1017,7 +1162,7 @@ schedulingRouter.get("/orange/day-type", async (req: Request, res: Response) => 
         CONVERT(varchar(5), dt.time_in, 108) AS time_in,
         CONVERT(varchar(5), dt.time_out, 108) AS time_out,
         dt.next_day
-      FROM ${dayTypeQualified}(@siteCode, @employeeId, @date) AS dt
+      FROM ${dayTypeQualified}(@companyId, @employeeId, @date) AS dt
     `;
     const result = await request.query(q);
     const row = (result.recordset?.[0] as OrangeDayTypeRow | undefined) ?? undefined;
@@ -1078,13 +1223,20 @@ schedulingRouter.post("/orange/day-type/batch", async (req: Request, res: Respon
     const orangeSchema = process.env.ORANGE_PROC_SCHEMA && process.env.ORANGE_PROC_SCHEMA.length ? String(process.env.ORANGE_PROC_SCHEMA) : "dbo";
     const orangeDayTypeProc = process.env.ORANGE_DAY_TYPE_PROC && process.env.ORANGE_DAY_TYPE_PROC.length ? String(process.env.ORANGE_DAY_TYPE_PROC) : "sp_it_get_day_type";
     const orangeSiteCode = process.env.ORANGE_SITE_CODE && process.env.ORANGE_SITE_CODE.length ? String(process.env.ORANGE_SITE_CODE) : "MTI";
+    const orangeCompanyIdDefault =
+      process.env.ORANGE_COMPANY_ID_DEFAULT && process.env.ORANGE_COMPANY_ID_DEFAULT.length
+        ? String(process.env.ORANGE_COMPANY_ID_DEFAULT)
+        : orangeSiteCode;
+    const orangeCompanyIdMtibj =
+      process.env.ORANGE_COMPANY_ID_MTIBJ && process.env.ORANGE_COMPANY_ID_MTIBJ.length ? String(process.env.ORANGE_COMPANY_ID_MTIBJ) : "MTIB";
     const dayTypeQualified = `[${orangeSchema}].[${orangeDayTypeProc}]`;
 
     const pool = await getOrangePool();
     const request = pool.request();
     request.input("employeeIds", sql.NVarChar, employeeIds.join(","));
     request.input("date", sql.NVarChar, date);
-    request.input("siteCode", sql.NVarChar, orangeSiteCode);
+    request.input("companyIdDefault", sql.NVarChar, orangeCompanyIdDefault);
+    request.input("companyIdMtibj", sql.NVarChar, orangeCompanyIdMtibj);
 
     const q = `
       SELECT
@@ -1101,7 +1253,7 @@ schedulingRouter.post("/orange/day-type/batch", async (req: Request, res: Respon
       ) AS ids
       OUTER APPLY (
         SELECT TOP 1 day_type, description, time_in, time_out, next_day
-        FROM ${dayTypeQualified}(@siteCode, ids.employee_id, @date)
+        FROM ${dayTypeQualified}(CASE WHEN ids.employee_id LIKE 'MTIBJ%' THEN @companyIdMtibj ELSE @companyIdDefault END, ids.employee_id, @date)
       ) AS dt
       ORDER BY ids.employee_id ASC
     `;
