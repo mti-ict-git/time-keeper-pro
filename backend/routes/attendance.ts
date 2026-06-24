@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import sql from "mssql";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { getPool } from "../db";
 import { getTableColumns } from "../utils/introspection";
@@ -385,6 +386,78 @@ function parseRunnerSummary(stdout: string): Record<string, unknown> {
   return out;
 }
 
+function extractExportedCsvName(stdout: string): string | null {
+  const m = stdout.match(/Data exported to\s+(.+?)\s+successfully\./i);
+  return m ? m[1].trim() : null;
+}
+
+function parseCsvRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      cells.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current);
+  return cells;
+}
+
+async function readCsvPreview(csvName: string, maxRows = 20): Promise<{
+  fileName: string;
+  totalRows: number;
+  previewRows: Record<string, string>[];
+  controllers: string[];
+}> {
+  const csvPath = path.resolve(process.cwd(), csvName);
+  const raw = await readFile(csvPath, "utf8");
+  const lines = raw.split(/\r?\n/).filter((line) => line.length > 0);
+  if (lines.length === 0) {
+    return { fileName: path.basename(csvPath), totalRows: 0, previewRows: [], controllers: [] };
+  }
+
+  const headers = parseCsvRow(lines[0]);
+  const previewRows: Record<string, string>[] = [];
+  const controllers = new Set<string>();
+  for (let i = 1; i < lines.length; i += 1) {
+    const values = parseCsvRow(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      row[header] = values[idx] ?? "";
+    });
+    const controller = row.TrController ?? row.Controller ?? row.controller ?? "";
+    if (controller) controllers.add(controller);
+    if (previewRows.length < maxRows) previewRows.push(row);
+  }
+
+  try {
+    await unlink(csvPath);
+  } catch {
+    // Best effort only. Keeping the CSV is acceptable if deletion fails.
+  }
+
+  return {
+    fileName: path.basename(csvPath),
+    totalRows: Math.max(0, lines.length - 1),
+    previewRows,
+    controllers: Array.from(controllers).sort((a, b) => a.localeCompare(b)),
+  };
+}
+
 function runAttendancePythonWithArgs(args: string[]): Promise<AttendanceRunLog> {
   const startedAt = new Date();
   return new Promise<AttendanceRunLog>((resolve) => {
@@ -630,6 +703,65 @@ attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
 attendanceRouter.post("/runner/run", async (_req: Request, res: Response) => {
   await runAttendanceNow();
   res.json({ lastRun: attLastRun });
+});
+
+attendanceRouter.post("/runner/dry-run", async (req: Request, res: Response) => {
+  if (attRunning) {
+    res.status(409).json({ error: "Attendance runner is already running" });
+    return;
+  }
+
+  const date = typeof req.body?.date === "string" ? req.body.date.trim() : "";
+  const startDate = typeof req.body?.startDate === "string" ? req.body.startDate.trim() : "";
+  const endDate = typeof req.body?.endDate === "string" ? req.body.endDate.trim() : "";
+  const staffNo = typeof req.body?.staffNo === "string" ? req.body.staffNo.trim() : "";
+  const useFilo = Boolean(req.body?.useFilo);
+  const previewLimitRaw = Number((req.body?.previewLimit as unknown) ?? 20);
+  const previewLimit = Number.isFinite(previewLimitRaw) && previewLimitRaw > 0
+    ? Math.min(100, Math.floor(previewLimitRaw))
+    : 20;
+
+  if (date && (startDate || endDate)) {
+    res.status(400).json({ error: "Use either date or startDate/endDate, not both" });
+    return;
+  }
+
+  const scriptAbs = path.resolve(process.cwd(), attScriptRel);
+  const args: string[] = [scriptAbs, "--dry-run"];
+  if (date) args.push("--date", date);
+  if (startDate) args.push("--start-date", startDate);
+  if (endDate) args.push("--end-date", endDate);
+  if (staffNo) args.push("--staff-no", staffNo);
+  if (useFilo) args.push("--use-filo");
+
+  attRunning = true;
+  try {
+    const log = await runAttendancePythonWithArgs(args);
+    attLastRun = log;
+    await saveAttendanceRunnerLog(log);
+    const summary = parseRunnerSummary(log.stdout ?? "");
+    const csvName = extractExportedCsvName(log.stdout ?? "");
+    const csvPreview = csvName ? await readCsvPreview(csvName, previewLimit) : null;
+    res.status(log.success ? 200 : 500).json({
+      mode: "dry-run",
+      params: {
+        date: date || null,
+        startDate: startDate || null,
+        endDate: endDate || null,
+        staffNo: staffNo || null,
+        useFilo,
+        previewLimit,
+      },
+      success: log.success,
+      exitCode: log.exitCode,
+      error: log.error ?? null,
+      summary,
+      csvPreview,
+      lastRun: log,
+    });
+  } finally {
+    attRunning = false;
+  }
 });
 
 attendanceRouter.post("/push-now", async (req: Request, res: Response) => {
