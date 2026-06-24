@@ -446,8 +446,8 @@ async function readCsvPreview(csvName: string, maxRows = 20): Promise<{
 
   try {
     await unlink(csvPath);
-  } catch {
-    // Best effort only. Keeping the CSV is acceptable if deletion fails.
+  } catch (err) {
+    void err;
   }
 
   return {
@@ -741,7 +741,16 @@ attendanceRouter.post("/runner/dry-run", async (req: Request, res: Response) => 
     await saveAttendanceRunnerLog(log);
     const summary = parseRunnerSummary(log.stdout ?? "");
     const csvName = extractExportedCsvName(log.stdout ?? "");
-    const csvPreview = csvName ? await readCsvPreview(csvName, previewLimit) : null;
+    let csvPreview: Awaited<ReturnType<typeof readCsvPreview>> | null = null;
+    let csvError: string | null = null;
+    if (csvName) {
+      try {
+        csvPreview = await readCsvPreview(csvName, previewLimit);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        csvError = msg;
+      }
+    }
     res.status(log.success ? 200 : 500).json({
       mode: "dry-run",
       params: {
@@ -757,6 +766,7 @@ attendanceRouter.post("/runner/dry-run", async (req: Request, res: Response) => 
       error: log.error ?? null,
       summary,
       csvPreview,
+      csvError,
       lastRun: log,
     });
   } finally {
