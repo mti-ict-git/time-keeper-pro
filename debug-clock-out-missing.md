@@ -62,3 +62,25 @@
 - Trigger attendance runner again
 - Confirm `AttendanceRunnerLogs` no longer shows repeated ~300000ms failures
 - Confirm `Clock Out` rows for `2026-06-24` increase materially after re-ingestion
+
+## Post-Deploy Runtime Evidence
+- After Docker update, `GET /api/attendance/runner/status` showed:
+  - `runTimeoutMs = 1800000`
+  - `lastRun = null`
+  - meaning the new config was loaded, but no successful post-deploy run had completed yet.
+- Manual trigger attempt:
+  - `POST /api/attendance/runner/run`
+  - response from HTTP client: `Empty reply from server`
+- Immediately after manual trigger:
+  - `GET /api/health` failed with `Couldn't connect to server`
+  - `GET /api/attendance/runner/status` failed with `Couldn't connect to server`
+  - retry after 8 seconds still failed
+- DB state remained unchanged:
+  - `AttendanceRunnerLogs` had no new success record
+  - `AttendanceJobState.attendance_ingest_v1` still stale at `2026-06-24 07:59:48`
+
+## Current Conclusion
+- Timeout fix is present in the deployed service.
+- However, the server now appears to crash or become unavailable when `POST /api/attendance/runner/run` is invoked.
+- Because the service is down, backlog catch-up has not occurred yet.
+- Likely crash trigger: the temporary instrumentation added during debugging used `require("node:fs")` inside the ESM backend route. That path has now been removed locally to restore service stability while keeping the timeout fix.
