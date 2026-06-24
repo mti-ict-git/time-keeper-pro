@@ -354,10 +354,11 @@ const attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
 const attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
 const attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
 const attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
-const attRunTimeoutMsRaw = process.env.ATTENDANCE_RUN_TIMEOUT_MS ? Number(process.env.ATTENDANCE_RUN_TIMEOUT_MS) : 5 * 60 * 1000;
-const attRunTimeoutMs = Number.isFinite(attRunTimeoutMsRaw) && attRunTimeoutMsRaw > 0
+const defaultAttRunTimeoutMs = 30 * 60 * 1000;
+const attRunTimeoutMsRaw = process.env.ATTENDANCE_RUN_TIMEOUT_MS ? Number(process.env.ATTENDANCE_RUN_TIMEOUT_MS) : defaultAttRunTimeoutMs;
+const attRunTimeoutMs = Number.isFinite(attRunTimeoutMsRaw) && attRunTimeoutMsRaw >= 0
   ? Math.floor(attRunTimeoutMsRaw)
-  : 5 * 60 * 1000;
+  : defaultAttRunTimeoutMs;
 const attUseDbSettings = String(process.env.ATTENDANCE_USE_DB_SETTINGS ?? "")
   .trim()
   .toLowerCase() === "true";
@@ -467,11 +468,19 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
   return new Promise<AttendanceRunLog>((resolve) => {
     const env = envOverride ? { ...process.env, ...envOverride } : process.env;
     const child = spawn(attPythonExe, args, { cwd: process.cwd(), env, windowsHide: true });
+    // #region debug-point A:runner-spawn
+    (()=>{const fs=require("node:fs");const p=".dbg/clock-out-missing.env";let u="http://127.0.0.1:7777/event",s="clock-out-missing";try{const e=fs.readFileSync(p,"utf8");u=e.match(/DEBUG_SERVER_URL=(.+)/)?.[1]||u;s=e.match(/DEBUG_SESSION_ID=(.+)/)?.[1]||s}catch{}fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:s,runId:"pre-fix",hypothesisId:"A",location:"backend/routes/attendance.ts:469",msg:"[DEBUG] Attendance runner spawned",data:{python:attPythonExe,args,timeoutMs:attRunTimeoutMs,pid:child.pid},ts:Date.now()})}).catch(()=>{})})();
+    // #endregion
     let out = "";
     let err = "";
     let settled = false;
+    let timedOut = false;
     let hardTimeout: NodeJS.Timeout | null = null;
-    const timeout = setTimeout(() => {
+    const timeout = attRunTimeoutMs > 0 ? setTimeout(() => {
+      timedOut = true;
+      // #region debug-point A:runner-timeout
+      (()=>{const fs=require("node:fs");const p=".dbg/clock-out-missing.env";let u="http://127.0.0.1:7777/event",s="clock-out-missing";try{const e=fs.readFileSync(p,"utf8");u=e.match(/DEBUG_SERVER_URL=(.+)/)?.[1]||u;s=e.match(/DEBUG_SESSION_ID=(.+)/)?.[1]||s}catch{}fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:s,runId:"pre-fix",hypothesisId:"A",location:"backend/routes/attendance.ts:474",msg:"[DEBUG] Attendance runner timeout reached",data:{timeoutMs:attRunTimeoutMs,pid:child.pid,args,stdoutLength:out.length,stderrLength:err.length},ts:Date.now()})}).catch(()=>{})})();
+      // #endregion
       try {
         child.kill();
       } catch {
@@ -518,15 +527,15 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
           stderr: err,
         });
       }, 5000);
-    }, attRunTimeoutMs);
-
+    }, attRunTimeoutMs) : null;
     const resolveOnce = (log: AttendanceRunLog): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       if (hardTimeout) clearTimeout(hardTimeout);
       resolve(log);
     };
+
 
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString("utf8");
@@ -548,14 +557,17 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
       });
     });
     child.on("close", (code) => {
+      // #region debug-point A:runner-close
+      (()=>{const fs=require("node:fs");const p=".dbg/clock-out-missing.env";let u="http://127.0.0.1:7777/event",s="clock-out-missing";try{const e=fs.readFileSync(p,"utf8");u=e.match(/DEBUG_SERVER_URL=(.+)/)?.[1]||u;s=e.match(/DEBUG_SESSION_ID=(.+)/)?.[1]||s}catch{}fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:s,runId:"pre-fix",hypothesisId:"A",location:"backend/routes/attendance.ts:550",msg:"[DEBUG] Attendance runner closed",data:{code,pid:child.pid,stdoutLength:out.length,stderrLength:err.length},ts:Date.now()})}).catch(()=>{})})();
+      // #endregion
       const finishedAt = new Date();
       resolveOnce({
         startedAt,
         finishedAt,
         durationMs: finishedAt.getTime() - startedAt.getTime(),
-        success: code === 0,
+        success: code === 0 && !timedOut,
         exitCode: typeof code === "number" ? code : null,
-        error: code === 0 ? undefined : `Exited with code ${String(code)}`,
+        error: timedOut ? `Timed out after ${attRunTimeoutMs}ms` : code === 0 ? undefined : `Exited with code ${String(code)}`,
         stdout: out,
         stderr: err,
       });
@@ -760,6 +772,7 @@ attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
     python: attPythonExe,
     script: attScriptRel,
     jobName: attJobName,
+    runTimeoutMs: attRunTimeoutMs,
     lastRun: attLastRun,
   });
 });
