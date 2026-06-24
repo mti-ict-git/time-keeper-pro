@@ -354,6 +354,10 @@ const attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
 const attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
 const attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
 const attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
+const attRunTimeoutMsRaw = process.env.ATTENDANCE_RUN_TIMEOUT_MS ? Number(process.env.ATTENDANCE_RUN_TIMEOUT_MS) : 5 * 60 * 1000;
+const attRunTimeoutMs = Number.isFinite(attRunTimeoutMsRaw) && attRunTimeoutMsRaw > 0
+  ? Math.floor(attRunTimeoutMsRaw)
+  : 5 * 60 * 1000;
 const attUseDbSettings = String(process.env.ATTENDANCE_USE_DB_SETTINGS ?? "")
   .trim()
   .toLowerCase() === "true";
@@ -458,12 +462,72 @@ async function readCsvPreview(csvName: string, maxRows = 20): Promise<{
   };
 }
 
-function runAttendancePythonWithArgs(args: string[]): Promise<AttendanceRunLog> {
+function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string, string | undefined>): Promise<AttendanceRunLog> {
   const startedAt = new Date();
   return new Promise<AttendanceRunLog>((resolve) => {
-    const child = spawn(attPythonExe, args, { cwd: process.cwd(), env: process.env, windowsHide: true });
+    const env = envOverride ? { ...process.env, ...envOverride } : process.env;
+    const child = spawn(attPythonExe, args, { cwd: process.cwd(), env, windowsHide: true });
     let out = "";
     let err = "";
+    let settled = false;
+    let hardTimeout: NodeJS.Timeout | null = null;
+    const timeout = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        hardTimeout = setTimeout(() => {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            void 0;
+          }
+          const finishedAt = new Date();
+          if (settled) return;
+          settled = true;
+          resolve({
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt.getTime() - startedAt.getTime(),
+            success: false,
+            exitCode: null,
+            error: `Timed out after ${attRunTimeoutMs}ms`,
+            stdout: out,
+            stderr: err,
+          });
+        }, 5000);
+        return;
+      }
+
+      hardTimeout = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          void 0;
+        }
+        const finishedAt = new Date();
+        if (settled) return;
+        settled = true;
+        resolve({
+          startedAt,
+          finishedAt,
+          durationMs: finishedAt.getTime() - startedAt.getTime(),
+          success: false,
+          exitCode: null,
+          error: `Timed out after ${attRunTimeoutMs}ms`,
+          stdout: out,
+          stderr: err,
+        });
+      }, 5000);
+    }, attRunTimeoutMs);
+
+    const resolveOnce = (log: AttendanceRunLog): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (hardTimeout) clearTimeout(hardTimeout);
+      resolve(log);
+    };
+
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString("utf8");
     });
@@ -472,7 +536,7 @@ function runAttendancePythonWithArgs(args: string[]): Promise<AttendanceRunLog> 
     });
     child.on("error", (e) => {
       const finishedAt = new Date();
-      resolve({
+      resolveOnce({
         startedAt,
         finishedAt,
         durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -485,7 +549,7 @@ function runAttendancePythonWithArgs(args: string[]): Promise<AttendanceRunLog> 
     });
     child.on("close", (code) => {
       const finishedAt = new Date();
-      resolve({
+      resolveOnce({
         startedAt,
         finishedAt,
         durationMs: finishedAt.getTime() - startedAt.getTime(),
@@ -736,7 +800,7 @@ attendanceRouter.post("/runner/dry-run", async (req: Request, res: Response) => 
 
   attRunning = true;
   try {
-    const log = await runAttendancePythonWithArgs(args);
+    const log = await runAttendancePythonWithArgs(args, { ATTENDANCE_WAID: "" });
     attLastRun = log;
     await saveAttendanceRunnerLog(log);
     const summary = parseRunnerSummary(log.stdout ?? "");

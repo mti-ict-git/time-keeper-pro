@@ -1229,6 +1229,7 @@ def main():
         INSERT_TO_MCG_CLOCKING_TBL = False
         INSERT_TO_TBL_ATTENDANCE_REPORT = False
         args.force_replace = False
+        WAID = None
 
     if args.push_now_report:
         slot = str(args.slot_override).strip() if args.slot_override else _auto_push_slot(_push_now())
