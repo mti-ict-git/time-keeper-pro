@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,25 +6,25 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 222 47% 11%;
+    --background: 210 25% 97%;
+    --foreground: 222 34% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 222 34% 14%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 222 34% 14%;
 
-    --primary: 221 83% 53%;
+    --primary: 217 69% 31%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 210 26% 94%;
+    --secondary-foreground: 222 34% 14%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 210 26% 94%;
+    --muted-foreground: 215 14% 40%;
 
-    --accent: 173 58% 39%;
+    --accent: 193 63% 30%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
@@ -36,29 +36,29 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 0%;
 
-    --info: 199 89% 48%;
+    --info: 203 68% 42%;
     --info-foreground: 0 0% 100%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    --border: 214 24% 87%;
+    --input: 214 24% 87%;
+    --ring: 217 69% 31%;
 
     --radius: 0.5rem;
 
-    --chart-1: 221 83% 53%;
-    --chart-2: 173 58% 39%;
+    --chart-1: 217 69% 31%;
+    --chart-2: 193 63% 30%;
     --chart-3: 38 92% 50%;
     --chart-4: 142 76% 36%;
     --chart-5: 0 84% 60%;
 
-    --sidebar-background: 222 47% 11%;
+    --sidebar-background: 221 52% 12%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary: 217 69% 39%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent: 220 32% 19%;
     --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 221 83% 53%;
+    --sidebar-border: 219 32% 19%;
+    --sidebar-ring: 217 69% 39%;
 
     /* Status colors */
     --status-early: 38 92% 50%;
@@ -70,42 +70,42 @@
   }
 
   .dark {
-    --background: 222 47% 11%;
+    --background: 222 41% 10%;
     --foreground: 210 40% 98%;
 
-    --card: 217 33% 17%;
+    --card: 218 28% 15%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 217 33% 17%;
+    --popover: 218 28% 15%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 221 83% 53%;
+    --primary: 213 65% 54%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 217 33% 17%;
+    --secondary: 218 24% 19%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 218 24% 19%;
+    --muted-foreground: 215 16% 67%;
 
-    --accent: 173 58% 39%;
+    --accent: 193 63% 37%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62% 31%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 221 83% 53%;
+    --border: 218 20% 23%;
+    --input: 218 20% 23%;
+    --ring: 213 65% 54%;
 
-    --sidebar-background: 222 47% 8%;
+    --sidebar-background: 222 41% 8%;
     --sidebar-foreground: 210 40% 96%;
-    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary: 213 65% 54%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 13%;
+    --sidebar-accent: 219 27% 14%;
     --sidebar-accent-foreground: 210 40% 96%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 221 83% 53%;
+    --sidebar-border: 219 27% 14%;
+    --sidebar-ring: 213 65% 54%;
   }
 }
 
@@ -116,7 +116,10 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', sans-serif;
+    font-family: 'IBM Plex Sans', sans-serif;
+    background-image:
+      radial-gradient(circle at top left, hsl(var(--primary) / 0.07), transparent 28%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(var(--background)));
   }
 }
 

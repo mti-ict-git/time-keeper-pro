@@ -17,13 +17,31 @@ import {
 import { StatsCard } from '@/components/StatsCard';
 import { SchedulingDBTable } from '@/components/tables/SchedulingDBTable';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LayoutDashboard, FileText, CheckCircle, XCircle, Users, FileSpreadsheet, Loader2, CalendarDays, RefreshCw, Play } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarDays,
+  CalendarRange,
+  CheckCircle,
+  Clock3,
+  Database,
+  FileSpreadsheet,
+  FileText,
+  History,
+  LayoutDashboard,
+  Loader2,
+  Play,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Users,
+  XCircle,
+} from 'lucide-react';
 import { exportSchedulingEmployeesToXLSX } from '@/lib/services/exportService';
 import { toast } from '@/hooks/use-toast';
 
@@ -212,102 +230,196 @@ const TimeScheduling = () => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Users className="h-6 w-6 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Time Scheduling</h1>
-            <p className="text-muted-foreground">Truth by-date, snapshot, and audit views</p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Link to="/dashboard">
-            <Button variant="outline" className="rounded-xl shadow-sm">
-              <LayoutDashboard className="w-4 h-4 mr-2" />
-              Dashboard
-            </Button>
-          </Link>
-          <Link to="/attendance">
-            <Button className="rounded-xl shadow-lg shadow-primary/25">
-              <FileText className="w-4 h-4 mr-2" />
-              View Attendance
-            </Button>
-          </Link>
-        </div>
-      </div>
+    <div className="space-y-8 animate-fade-in">
+      <Card className="relative overflow-hidden rounded-[32px] border-0 bg-[linear-gradient(135deg,hsl(221_52%_12%)_0%,hsl(217_69%_31%)_55%,hsl(193_63%_30%)_100%)] text-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.85)]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(255,255,255,0.10),transparent_34%)]" />
+        <CardContent className="relative p-6 sm:p-8 lg:p-10">
+          <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
+            <div className="max-w-3xl space-y-5">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold uppercase tracking-[0.22em] text-white/68">
+                <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-white">Scheduling Operations</span>
+                <span>Truth, Snapshot, and Audit Workspace</span>
+              </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'truth' | 'snapshot' | 'history')} className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <TabsList className="w-full sm:w-auto">
-            <TabsTrigger value="truth">By Date (Truth)</TabsTrigger>
-            <TabsTrigger value="snapshot">Snapshot</TabsTrigger>
-            <TabsTrigger value="history">History / As-Of</TabsTrigger>
+              <div className="space-y-3">
+                <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.045em] sm:text-4xl lg:text-5xl">
+                  Corporate scheduling control for live shifts, snapshots, and audit trails.
+                </h1>
+                <p className="max-w-2xl text-sm leading-6 text-white/74 sm:text-base">
+                  Review published schedules, monitor prefetch health, and audit historical changes without leaving the operational workspace.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <div className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">Current Workspace</p>
+                  <p className="mt-1 text-sm font-medium text-white">
+                    {activeTab === 'truth' ? 'By Date Truth' : activeTab === 'snapshot' ? 'Current Snapshot' : 'History / As-Of'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">Shift Date</p>
+                  <p className="mt-1 text-sm font-medium text-white">{truthDate}</p>
+                </div>
+                <div className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">Prefetch Health</p>
+                  <p className="mt-1 text-sm font-medium text-white">{prefetchBadge.label}</p>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-white/15 bg-white/8 p-4 backdrop-blur-sm">
+                <div className="flex items-start gap-3">
+                  {prefetchStatus?.lastRun?.success === false ? (
+                    <XCircle className="mt-0.5 h-5 w-5 text-amber-300" />
+                  ) : (
+                    <ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-300" />
+                  )}
+                  <div className="space-y-1 text-sm leading-6 text-white/78">
+                    <p className="font-medium text-white">
+                      {prefetchStatus?.lastRun?.success === false ? 'Prefetch requires review before operational use.' : 'Scheduling workspace is ready for operational review.'}
+                    </p>
+                    <p>
+                      {prefetchStatus?.lastRun?.success === false && prefetchStatus.lastRun.error
+                        ? prefetchStatus.lastRun.error
+                        : 'Use the truth view for authoritative by-date schedules, snapshot view for current operational data, and history for audit lookup.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-1">
+                <Link to="/dashboard">
+                  <Button className="h-11 rounded-2xl bg-white px-5 text-sm font-semibold text-slate-950 hover:bg-white/92">
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    Open Dashboard
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+                <Link to="/attendance">
+                  <Button variant="outline" className="h-11 rounded-2xl border-white/20 bg-white/5 px-5 text-sm font-semibold text-white hover:bg-white/10 hover:text-white">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Review Attendance
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid w-full max-w-xl grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="rounded-[28px] border border-white/14 bg-white/10 p-5 backdrop-blur-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Employees in Truth View</p>
+                <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">{truthStats.totalEmployees}</p>
+                <p className="mt-2 text-sm leading-6 text-white/70">Published schedule rows for the selected shift date.</p>
+              </div>
+              <div className="rounded-[28px] border border-white/14 bg-white/10 p-5 backdrop-blur-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Time In Available</p>
+                <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">{truthStats.timeInAvailable}</p>
+                <p className="mt-2 text-sm leading-6 text-white/70">Rows with a resolved inbound schedule in the truth dataset.</p>
+              </div>
+              <div className="rounded-[28px] border border-white/14 bg-white/10 p-5 backdrop-blur-sm">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/65">Overnight Shifts</p>
+                <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white">{truthStats.overnightCount}</p>
+                <p className="mt-2 text-sm leading-6 text-white/70">Shifts that continue into the following day.</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'truth' | 'snapshot' | 'history')} className="space-y-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <TabsList className="h-auto w-full flex-col gap-2 rounded-[24px] border border-border/70 bg-card/90 p-2 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.35)] sm:w-auto sm:flex-row">
+            <TabsTrigger value="truth" className="min-w-[170px] rounded-2xl px-4 py-3 text-sm font-semibold">By Date Truth</TabsTrigger>
+            <TabsTrigger value="snapshot" className="min-w-[170px] rounded-2xl px-4 py-3 text-sm font-semibold">Current Snapshot</TabsTrigger>
+            <TabsTrigger value="history" className="min-w-[170px] rounded-2xl px-4 py-3 text-sm font-semibold">History / As-Of</TabsTrigger>
           </TabsList>
-          <div className="flex items-center gap-2">
-            <Badge variant={prefetchBadge.variant}>{prefetchBadge.label}</Badge>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={prefetchBadge.variant} className="rounded-full px-3 py-1.5 text-xs font-semibold">
+              {prefetchBadge.label}
+            </Badge>
             {prefetchStatus?.lastRun?.success === false && prefetchStatus?.lastRun?.error ? (
-              <Badge variant="destructive" className="hidden md:inline-flex max-w-[420px] truncate">
+              <Badge variant="destructive" className="max-w-full rounded-full px-3 py-1.5 text-xs font-semibold md:max-w-[420px] truncate">
                 {prefetchStatus.lastRun.error}
               </Badge>
             ) : null}
           </div>
         </div>
 
-        <TabsContent value="truth" className="space-y-4">
-          <Card className="border-0 shadow-lg shadow-primary/5">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <CalendarDays className="h-5 w-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">By Date (Truth)</h3>
-                      <p className="text-sm text-muted-foreground">Reads from OrangeScheduleDaily (anti-latency)</p>
-                    </div>
+        <TabsContent value="truth" className="space-y-6">
+          <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+            <CardHeader className="space-y-4 pb-2">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    Published Truth View
                   </div>
-                  <p className="text-xs text-muted-foreground">ShiftDate currently keyed as WIB (+7). Times are stored as site-local time values.</p>
+                  <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Authoritative schedule by shift date</CardTitle>
+                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                    Reads from `OrangeScheduleDaily` to give the operational team a low-latency source of truth for scheduled shifts and resolved time values.
+                  </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleTruthRefresh} disabled={truthLoading} className="rounded-xl">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Refresh
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={handleTruthRefresh} disabled={truthLoading} className="h-11 rounded-2xl px-5 text-sm font-semibold">
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh Truth View
                   </Button>
-                  <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="rounded-xl">
-                    {prefetchLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                  <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="h-11 rounded-2xl px-5 text-sm font-semibold">
+                    {prefetchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                     Trigger Prefetch
                   </Button>
                 </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                <div className="md:col-span-2 space-y-2">
-                  <Label htmlFor="truth-date">Shift Date</Label>
-                  <Input id="truth-date" type="date" value={truthDate} onChange={(e) => setTruthDate(e.target.value)} />
+            </CardHeader>
+            <CardContent className="space-y-5 pt-4">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.4fr)]">
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-primary/10 text-primary">
+                      <CalendarRange className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Shift Date Selector</p>
+                      <p className="text-sm text-muted-foreground">ShiftDate is currently keyed in WIB (+7).</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 space-y-2">
+                    <Label htmlFor="truth-date" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Shift Date</Label>
+                    <Input
+                      id="truth-date"
+                      type="date"
+                      value={truthDate}
+                      onChange={(e) => setTruthDate(e.target.value)}
+                      className="h-11 rounded-2xl border-border/70 bg-background/80"
+                    />
+                  </div>
                 </div>
-                <div className="md:col-span-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <StatsCard title="Employees" value={truthStats.totalEmployees} icon={Users} variant="default" />
-                  <StatsCard title="Time In OK" value={truthStats.timeInAvailable} icon={CheckCircle} variant="success" />
-                  <StatsCard title="Time In N/A" value={truthStats.timeInNA} icon={XCircle} variant="destructive" />
-                  <StatsCard title="Overnight" value={truthStats.overnightCount} icon={CheckCircle} variant="default" />
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+                  <StatsCard title="Employees" value={truthStats.totalEmployees} description="Rows loaded from the truth dataset for the selected date." icon={Users} variant="default" />
+                  <StatsCard title="Time In OK" value={truthStats.timeInAvailable} description="Schedules with a resolved inbound time." icon={CheckCircle} variant="success" />
+                  <StatsCard title="Time In N/A" value={truthStats.timeInNA} description="Rows that still require a usable inbound time." icon={XCircle} variant="destructive" />
+                  <StatsCard title="Overnight" value={truthStats.overnightCount} description="Shifts that cross into the following calendar day." icon={Clock3} variant="info" />
                 </div>
               </div>
 
-              {truthError ? <div className="text-sm text-destructive">{truthError}</div> : null}
+              {truthError ? (
+                <div className="rounded-[22px] border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  {truthError}
+                </div>
+              ) : null}
 
               {!truthLoading && truthRows.length === 0 ? (
-                <div className="rounded-xl border bg-muted/30 p-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="rounded-[24px] border border-border/70 bg-muted/30 p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="font-medium text-foreground">No snapshot data for this date</p>
-                      <p className="text-sm text-muted-foreground">Trigger prefetch to fill OrangeScheduleDaily for the selected date range.</p>
+                      <p className="font-medium text-foreground">No truth snapshot is available for this date.</p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        Run prefetch to populate `OrangeScheduleDaily` before the team reviews schedule coverage or exceptions.
+                      </p>
                     </div>
-                    <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="rounded-xl">
-                      {prefetchLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Play className="w-4 h-4 mr-2" />}
+                    <Button onClick={handleTruthPrefetchRun} disabled={prefetchLoading} className="h-11 rounded-2xl px-5 text-sm font-semibold">
+                      {prefetchLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                       Trigger Prefetch
                     </Button>
                   </div>
@@ -316,219 +428,307 @@ const TimeScheduling = () => {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg shadow-primary/5">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Users className="h-5 w-5 text-primary" />
+          <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+            <CardHeader className="pb-2">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                  Truth Dataset
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">Schedules for {truthDate}</h3>
-                  <p className="text-sm text-muted-foreground">Local filtering only</p>
-                </div>
+                <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Schedules for {truthDate}</CardTitle>
+                <p className="text-sm leading-6 text-muted-foreground">
+                  Operational filtering is available below. This table remains the primary working area for published schedules by date.
+                </p>
               </div>
+            </CardHeader>
+            <CardContent className="pt-4">
               <SchedulingDBTable data={truthRows} loading={truthLoading} error={truthError} disableUrlFilters />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="snapshot" className="space-y-4">
-          <Card className="border-0 shadow-lg shadow-primary/5">
-            <CardContent className="p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                    <Users className="h-5 w-5 text-primary" />
+        <TabsContent value="snapshot" className="space-y-6">
+          <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+            <CardHeader className="space-y-4 pb-2">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
+                    Current Snapshot
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">Current Snapshot (MTIUsers)</h3>
-                    <p className="text-sm text-muted-foreground">Operational snapshot; can differ from by-date truth</p>
-                  </div>
+                  <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Operational snapshot from MTIUsers</CardTitle>
+                  <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                    Use this view for current operational reference. Snapshot data may diverge from the by-date truth when adjustments or refresh timing differ.
+                  </p>
                 </div>
-                <Button variant="outline" onClick={handleExportXLSX} disabled={exportLoading} className="rounded-xl">
-                  {exportLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
+                <Button variant="outline" onClick={handleExportXLSX} disabled={exportLoading} className="h-11 rounded-2xl px-5 text-sm font-semibold">
+                  {exportLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-2 h-4 w-4" />}
                   Export XLSX
                 </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-primary/10 text-primary">
+                      <Database className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Live Snapshot</p>
+                      <p className="text-sm text-muted-foreground">Pulled from the operational user schedule source.</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-accent/10 text-accent">
+                      <RefreshCw className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Operational Use</p>
+                      <p className="text-sm text-muted-foreground">Best for quick checks and frontline schedule reference.</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-success/10 text-success">
+                      <FileSpreadsheet className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Excel Export</p>
+                      <p className="text-sm text-muted-foreground">Export current snapshot rows directly for offline review.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
               <SchedulingDBTable />
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="history" className="space-y-4">
-          <Card className="border-0 shadow-lg shadow-primary/5">
-            <CardContent className="p-5 space-y-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-primary" />
+        <TabsContent value="history" className="space-y-6">
+          <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+            <CardHeader className="space-y-4 pb-2">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="inline-flex h-2.5 w-2.5 rounded-full bg-warning" />
+                  Audit Lookup
                 </div>
-                <div>
-                  <h3 className="font-semibold text-foreground">History / As-Of Lookup</h3>
-                  <p className="text-sm text-muted-foreground">Audit schedule changes by employee ID</p>
-                </div>
+                <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">History and as-of investigation</CardTitle>
+                <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+                  Audit schedule changes by employee ID, inspect the effective schedule at a point in time, and review related legacy lock records in one workspace.
+                </p>
               </div>
-
+            </CardHeader>
+            <CardContent className="space-y-5 pt-4">
               <div className="grid grid-cols-12 gap-4">
                 <div className="col-span-12 md:col-span-3 space-y-2">
-                  <Label htmlFor="public-history-employee-id">Employee ID</Label>
-                  <Input id="public-history-employee-id" placeholder="e.g. MTI210009" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} />
+                  <Label htmlFor="public-history-employee-id" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Employee ID</Label>
+                  <Input id="public-history-employee-id" placeholder="e.g. MTI210009" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="h-11 rounded-2xl border-border/70 bg-background/80" />
                 </div>
                 <div className="col-span-12 md:col-span-3 space-y-2">
-                  <Label htmlFor="public-history-as-of">As Of Date Time</Label>
-                  <Input id="public-history-as-of" type="datetime-local" value={asOfAt} onChange={(e) => setAsOfAt(e.target.value)} />
+                  <Label htmlFor="public-history-as-of" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">As Of Date Time</Label>
+                  <Input id="public-history-as-of" type="datetime-local" value={asOfAt} onChange={(e) => setAsOfAt(e.target.value)} className="h-11 rounded-2xl border-border/70 bg-background/80" />
                 </div>
                 <div className="col-span-12 md:col-span-2 space-y-2">
-                  <Label htmlFor="public-history-from">History From</Label>
-                  <Input id="public-history-from" type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} />
+                  <Label htmlFor="public-history-from" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">History From</Label>
+                  <Input id="public-history-from" type="date" value={historyFrom} onChange={(e) => setHistoryFrom(e.target.value)} className="h-11 rounded-2xl border-border/70 bg-background/80" />
                 </div>
                 <div className="col-span-12 md:col-span-2 space-y-2">
-                  <Label htmlFor="public-history-to">History To</Label>
-                  <Input id="public-history-to" type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} />
+                  <Label htmlFor="public-history-to" className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">History To</Label>
+                  <Input id="public-history-to" type="date" value={historyTo} onChange={(e) => setHistoryTo(e.target.value)} className="h-11 rounded-2xl border-border/70 bg-background/80" />
                 </div>
                 <div className="col-span-12 md:col-span-2 flex items-end">
-                  <Button onClick={handleHistoryLookup} disabled={lookupLoading} className="w-full">
-                    {lookupLoading ? 'Loading…' : 'Lookup'}
+                  <Button onClick={handleHistoryLookup} disabled={lookupLoading} className="h-11 w-full rounded-2xl text-sm font-semibold">
+                    {lookupLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                    {lookupLoading ? 'Loading' : 'Lookup'}
                   </Button>
                 </div>
               </div>
 
-              {lookupError && <p className="text-sm text-destructive">{lookupError}</p>}
-              <p className="text-xs text-muted-foreground">Datetime display uses UTC+8 converted from source UTC+7.</p>
-
-              <div className="grid grid-cols-12 gap-4">
-                <div className="col-span-12 md:col-span-4">
-                  <div className="rounded-lg border p-4 space-y-2">
-                    <p className="text-xs text-muted-foreground">Effective Schedule At</p>
-                    <p className="font-mono text-sm">
-                      {asOfData?.at ? formatAsTargetOffset(asOfData.at, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : '—'}
-                    </p>
-                    <p className="text-sm">{asOfData ? `${asOfData.timeIn || '—'}–${asOfData.timeOut || '—'}` : '—'}</p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{asOfData?.source || 'none'}</Badge>
-                      <Badge variant="outline" className={asOfData?.nextDay ? 'bg-accent/10 text-accent' : ''}>
-                        {asOfData?.nextDay ? 'Overnight' : 'Day'}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Last change:{' '}
-                      {asOfData?.changedAtLocal
-                        ? formatLocalSourceToTarget(asOfData.changedAtLocal, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
-                        : 'No historical change before selected time'}
-                    </p>
-                  </div>
+              {lookupError ? (
+                <div className="rounded-[22px] border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  {lookupError}
                 </div>
+              ) : null}
 
-                <div className="col-span-12 md:col-span-8">
-                  <div className="rounded-lg border p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground">Timeline</p>
-                      <p className="text-xs text-muted-foreground">{history.length} changes</p>
+              <p className="text-xs leading-6 text-muted-foreground">Datetime display uses UTC+8 converted from source UTC+7.</p>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)]">
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-primary/10 text-primary">
+                      <Clock3 className="h-5 w-5" />
                     </div>
-                    <Input
-                      type="range"
-                      min={0}
-                      max={Math.max(0, history.length - 1)}
-                      step={1}
-                      value={history.length > 0 ? historyIndex : 0}
-                      disabled={history.length === 0}
-                      onChange={(e) => setHistoryIndex(Number(e.target.value))}
-                    />
-                    <div className="text-sm">
-                      {selectedHistoryItem ? (
-                        <div className="space-y-1">
-                          <p className="font-mono">
-                            {formatLocalSourceToTarget(selectedHistoryItem.changedAtLocal, selectedHistoryItem.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
-                          </p>
-                          <p>
-                            {selectedHistoryItem.timeIn || '—'}–{selectedHistoryItem.timeOut || '—'}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{selectedHistoryItem.nextDay ? 'Overnight' : 'Day shift'}</p>
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground">No change history in selected range</p>
-                      )}
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Effective Schedule</p>
+                      <p className="text-sm text-muted-foreground">Point-in-time result at the selected as-of datetime.</p>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-12 gap-4">
-                <div className="col-span-12 md:col-span-7">
-                  <div className="data-table-container overflow-auto max-h-[260px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Changed At</TableHead>
-                          <TableHead>Time In</TableHead>
-                          <TableHead>Time Out</TableHead>
-                          <TableHead>Overnight</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {history.map((row) => (
-                          <TableRow key={row.changeId}>
-                            <TableCell className="font-mono text-sm">
-                              {formatLocalSourceToTarget(row.changedAtLocal, row.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
-                            </TableCell>
-                            <TableCell className="font-mono text-sm">{row.timeIn || '—'}</TableCell>
-                            <TableCell className="font-mono text-sm">{row.timeOut || '—'}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className={row.nextDay ? 'bg-accent/10 text-accent' : ''}>
-                                {row.nextDay ? 'Yes' : 'No'}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {history.length === 0 && !lookupLoading && (
-                          <TableRow>
-                            <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
-                              No history records
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Effective At</p>
+                  <p className="font-mono text-sm text-foreground">
+                    {asOfData?.at ? formatAsTargetOffset(asOfData.at, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes) : '—'}
+                  </p>
+                  <p className="text-2xl font-semibold tracking-[-0.04em] text-foreground">{asOfData ? `${asOfData.timeIn || '—'}–${asOfData.timeOut || '—'}` : '—'}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="rounded-full">{asOfData?.source || 'none'}</Badge>
+                    <Badge variant="outline" className={asOfData?.nextDay ? 'rounded-full bg-accent/10 text-accent' : 'rounded-full'}>
+                      {asOfData?.nextDay ? 'Overnight' : 'Day'}
+                    </Badge>
                   </div>
+                  <p className="text-xs leading-6 text-muted-foreground">
+                    Last change:{' '}
+                    {asOfData?.changedAtLocal
+                      ? formatLocalSourceToTarget(asOfData.changedAtLocal, asOfData.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
+                      : 'No historical change before selected time'}
+                  </p>
                 </div>
 
-                <div className="col-span-12 md:col-span-5">
-                  <div className="data-table-container overflow-auto max-h-[260px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Shift Date</TableHead>
-                          <TableHead>Schedule Lock (Legacy)</TableHead>
-                          <TableHead>Locked At</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {locks.map((lock) => (
-                          <TableRow key={`${lock.employeeId}-${lock.shiftDate}`}>
-                            <TableCell>{lock.shiftDate}</TableCell>
-                            <TableCell className="font-mono text-sm">
-                              {lock.scheduledIn || '—'}–{lock.scheduledOut || '—'}
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {lock.lockedAtLocal
-                                ? formatLocalSourceToTarget(lock.lockedAtLocal, lock.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
-                                : '—'}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {locks.length === 0 && !lookupLoading && (
-                          <TableRow>
-                            <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
-                              No lock records
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-warning/10 text-warning">
+                        <History className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Timeline Navigator</p>
+                        <p className="text-sm text-muted-foreground">Browse through change history for the selected employee and date range.</p>
+                      </div>
+                    </div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{history.length} changes</p>
+                  </div>
+                  <Input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, history.length - 1)}
+                    step={1}
+                    value={history.length > 0 ? historyIndex : 0}
+                    disabled={history.length === 0}
+                    onChange={(e) => setHistoryIndex(Number(e.target.value))}
+                  />
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4 text-sm">
+                    {selectedHistoryItem ? (
+                      <div className="space-y-1">
+                        <p className="font-mono text-foreground">
+                          {formatLocalSourceToTarget(selectedHistoryItem.changedAtLocal, selectedHistoryItem.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
+                        </p>
+                        <p className="font-medium text-foreground">
+                          {selectedHistoryItem.timeIn || '—'}–{selectedHistoryItem.timeOut || '—'}
+                        </p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                          {selectedHistoryItem.nextDay ? 'Overnight shift' : 'Day shift'}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No change history in the selected range.</p>
+                    )}
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.9fr)]">
+            <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+              <CardHeader className="pb-2">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-warning" />
+                    Change Log
+                  </div>
+                  <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Schedule history records</CardTitle>
+                  <p className="text-sm leading-6 text-muted-foreground">Detailed schedule change events returned for the current lookup.</p>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="data-table-container overflow-auto rounded-[22px] border border-border/70 shadow-none max-h-[320px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Changed At</TableHead>
+                        <TableHead>Time In</TableHead>
+                        <TableHead>Time Out</TableHead>
+                        <TableHead>Overnight</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {history.map((row) => (
+                        <TableRow key={row.changeId}>
+                          <TableCell className="font-mono text-sm">
+                            {formatLocalSourceToTarget(row.changedAtLocal, row.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{row.timeIn || '—'}</TableCell>
+                          <TableCell className="font-mono text-sm">{row.timeOut || '—'}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className={row.nextDay ? 'rounded-full bg-accent/10 text-accent' : 'rounded-full'}>
+                              {row.nextDay ? 'Yes' : 'No'}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {history.length === 0 && !lookupLoading && (
+                        <TableRow>
+                          <TableCell colSpan={4} className="h-20 text-center text-muted-foreground">
+                            No history records
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
+              <CardHeader className="pb-2">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                    <span className="inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
+                    Legacy Locks
+                  </div>
+                  <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Schedule lock records</CardTitle>
+                  <p className="text-sm leading-6 text-muted-foreground">Reference legacy schedule locks relevant to the current employee lookup.</p>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="data-table-container overflow-auto rounded-[22px] border border-border/70 shadow-none max-h-[320px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Shift Date</TableHead>
+                        <TableHead>Schedule Lock (Legacy)</TableHead>
+                        <TableHead>Locked At</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {locks.map((lock) => (
+                        <TableRow key={`${lock.employeeId}-${lock.shiftDate}`}>
+                          <TableCell>{lock.shiftDate}</TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {lock.scheduledIn || '—'}–{lock.scheduledOut || '—'}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {lock.lockedAtLocal
+                              ? formatLocalSourceToTarget(lock.lockedAtLocal, lock.sourceUtcOffsetMinutes, targetUtcOffsetMinutes)
+                              : '—'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {locks.length === 0 && !lookupLoading && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                            No lock records
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
