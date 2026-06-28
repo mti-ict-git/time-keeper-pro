@@ -1,56 +1,50 @@
 # Debug Session: attendance-stop-june25 [OPEN]
 
-## Symptom
-- Attendance terlihat berhenti di tanggal `2026-06-25`
-- Pada tanggal `2026-06-25`, banyak record tampak hanya memiliki satu sisi event:
-  - hanya `Clock In`, atau
-  - hanya `Clock Out`
+## Symptoms
+- Attendance report/data lokal berhenti di tanggal `2026-06-25`.
+- Pada `2026-06-25`, banyak employee hanya punya satu sisi event: `Clock In` saja atau `Clock Out` saja.
 
-## Scope
-- Backend attendance ingestion
-- Attendance report aggregation
-- Schedule by-date dependency after `plan_fix.md` changes
+## Hypotheses
+1. Runner incremental memakai `now`/timezone yang salah, sehingga range query terpotong dan tidak pernah mengejar transaksi setelah `2026-06-25`.
+2. Watermark `attendance_ingest_v1` maju ke nilai yang salah atau terlalu agresif, sehingga sebagian transaksi valid terlewati.
+3. Logic klasifikasi `Clock In/Clock Out` untuk shift overnight menyebabkan pasangan event `2026-06-25 -> 2026-06-26` pecah dan hanya satu sisi yang tersimpan.
+4. Perubahan `plan_fix` pada schedule/company mapping memperbaiki `No Shift Data`, tetapi meninggalkan data parsial/placeholder yang membuat agregasi report tampak satu sisi.
+5. Data source transaksi setelah `2026-06-25` ada, tetapi ingestion lokal gagal/skip karena filter controller, duplicate/idempotency, atau aturan insert.
 
-## Initial Hypotheses
-1. Watermark ingestion `attendance_ingest_v1` berhenti atau lompat tidak benar setelah perubahan schedule/runner, sehingga data setelah titik tertentu tidak ikut masuk.
-2. Schedule by-date hasil perubahan `company_id` membuat sebagian event di `2026-06-25` jatuh ke `Outside Range` atau `No Shift Data`, sehingga hanya satu sisi event yang lolos.
-3. Aggregasi route `/api/attendance/report` mengelompokkan event ke `shift-date` yang salah, terutama untuk overnight shift, sehingga tanggal tampak berhenti atau pasangan `IN/OUT` terpecah.
-4. Request report untuk range tertentu gagal/timeout di Docker, sehingga UI terlihat seolah data berhenti di `2026-06-25` padahal source/DB lokal masih punya data.
-5. Backfill/fix sebelumnya memperbaiki `2026-06-24` tetapi tidak menutup `2026-06-25`, sehingga ada gap data harian yang belum ter-recover.
+## Evidence To Collect
+- Status dan log runner attendance yang sedang berjalan.
+- Nilai watermark `attendance_ingest_v1`.
+- Rentang tanggal maksimum di source transaksi vs tabel lokal `tblAttendanceReport`.
+- Distribusi pola `both/inOnly/outOnly/noShift` untuk `2026-06-25`.
+- Sample 1-2 employee untuk validasi source vs local vs report.
+
+## Notes
+- Tidak ada perubahan business logic pada tahap awal sesi ini.
 
 ## Evidence Log
-- `DataDBEnt.dbo.tblTransaction` masih memiliki `Valid Entry Access` pada:
-  - `2026-06-25`: 3132
-  - `2026-06-26`: 3186
-  - `2026-06-27`: 3169
-  - `2026-06-28`: 1566
-- `dbo.tblAttendanceReport` saat ini berhenti di `2026-06-25`
-  - `MAX(TrDate) = 2026-06-25`
-  - Top date counts:
-    - `2026-06-25`: 730
-    - `2026-06-24`: 888
-    - `2026-06-23`: 886
-- `AttendanceJobState.attendance_ingest_v1`:
-  - `LastProcessedTrDateTime = 2026-06-25 22:57:20`
-  - `LastRunAt = 2026-06-26 02:37:24`
-  - no error persisted
-- Distribusi `2026-06-25` per staff di DB lokal:
-  - `bothPresent = 240`
-  - `inOnly = 148`
-  - `outOnly = 26`
-  - `neither = 7`
-  - `noShift = 2`
-  - `outsideMixed = 10`
-- Route report attendance:
-  - membaca `tblAttendanceReport`
-  - lalu mengagregasi per `staff|effectiveDate`
-  - overnight `Clock Out` sebelum jam 12 dipindah ke tanggal sebelumnya
-- Script incremental attendance:
-  - memakai `datetime.now()` naif untuk `start/end`
-  - menyimpan watermark `LastProcessedTrDateTime` tanpa timezone
-  - untuk incremental, `start_datetime = watermark - lookback`, `end_datetime = datetime.now()`
+- `GET /api/attendance/runner/status` saat ini menunjukkan runner sehat dan sudah memproses `2026-06-28`, dengan `lastRun.success=true`.
+- `GET /api/attendance/report?from=2026-06-25&to=2026-06-28&limit=20000` mengembalikan `1622` row dengan distribusi date:
+  - `2026-06-28: 208`
+  - `2026-06-27: 442`
+  - `2026-06-26: 444`
+  - `2026-06-25: 435`
+  - `2026-06-24: 93`
+- `GET /api/attendance/report?from=2026-06-26&to=2026-06-28&limit=20000` masih mengandung `date=2026-06-25`.
+- `GET /api/attendance/report?from=2026-06-25&to=2026-06-25&limit=20000` mengembalikan `514` row dengan pola:
+  - `both=241`
+  - `inOnly=147`
+  - `outOnly=119`
+  - `neither=7`
+- Untuk schedule `23:00-07:00`, pola pada query `2026-06-25` sangat dominan satu sisi:
+  - `both=1`
+  - `inOnly=97`
+  - `outOnly=93`
+  - `neither=1`
 
-## Next Steps
-1. Bedakan apakah gap setelah `2026-06-25 22:57:20` disebabkan timezone/clock proses atau query range incremental
-2. Analisa pola `inOnly/outOnly` tanggal `2026-06-25` berdasarkan jenis shift
-3. Tentukan hipotesis mana yang confirmed vs rejected sebelum fix
+## Interim Conclusion
+- Hipotesis 1 (`runner berhenti di 25 Juni`) saat ini tidak lagi berlaku pada runtime terbaru.
+- Hipotesis 3 paling kuat: route report memfilter raw row berdasarkan `TrDate/TrDateTime` terlebih dahulu, lalu baru menggeser `effectiveDate` untuk overnight `Clock Out`; akibatnya range filter dan grouping shift-date menjadi tidak konsisten.
+- Gejala yang dihasilkan:
+  - query range `26-28` masih memunculkan `date=25`
+  - query `25` bisa membawa row yang secara effective date menjadi `24`
+  - pasangan overnight banyak terbelah menjadi `inOnly` atau `outOnly`
