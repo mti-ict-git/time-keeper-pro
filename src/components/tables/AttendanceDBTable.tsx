@@ -57,6 +57,8 @@ export const AttendanceDBTable = () => {
     const staffPattern = /^MTI\d{6}$/;
     const employeeIdParam = staffPattern.test(q) ? q : undefined;
     const searchParam = q.length >= 3 && !employeeIdParam ? q : undefined;
+    const hasDateRange = Boolean(dateFrom && dateTo);
+    const requestLimit = hasDateRange ? 15000 : (searchParam || employeeIdParam ? 2000 : 2000);
     setLoading(true);
     fetchAttendanceReport({
       from: dateFrom || undefined,
@@ -64,7 +66,7 @@ export const AttendanceDBTable = () => {
       search: searchParam,
       employeeId: employeeIdParam,
       department: departmentFilter !== "all" ? departmentFilter : undefined,
-      limit: searchParam || employeeIdParam ? 500 : undefined,
+      limit: requestLimit,
     })
       .then((rows) => setData(rows))
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))

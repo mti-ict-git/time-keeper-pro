@@ -32,7 +32,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
-    const maxLimit = 2000;
+    const maxLimit = 20000;
     const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0
       ? Math.min(Math.floor(limitParam as number), maxLimit)
       : 200;
