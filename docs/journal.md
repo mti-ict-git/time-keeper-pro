@@ -940,3 +940,34 @@ Verification:
 - Verified `MTI220063` now returns one complete row for `2026-06-25` with `actual_in=22:36` and `actual_out=06:31`
 - Verified range boundaries for `2026-06-24` through `2026-06-26` remain grouped per shift date
 - Verification passed with `npx tsc --noEmit`
+
+2026-06-28
+
+## Feature:
+- Attendance source issue labeling
+
+## Changes:
+- Updated `backend/routes/attendance.ts` to preserve non-classified source events like `No Shift Data` and `Outside Range` as `source_issue`
+- Mapped those source-side issues into report status labels such as `Source Issue (No Shift Data)` instead of misleading generic `Missing`
+- Updated `src/components/tables/AttendanceDBTable.tsx` badge styling so source issues are visually distinct from normal attendance statuses
+
+## Notes:
+- Verified `MTIBJ172` now returns `Source Issue (No Shift Data)` for both status chips
+- Verified `MTI260083` returns `OUT: Source Issue (Outside Range)` while keeping `IN: Early`
+- Verified `MTI220060` remains a normal `OUT: Missing` case because no source issue event exists
+- Verification passed with `npx tsc --noEmit`
+
+2026-06-28
+
+## Feature:
+- Attendance employee group filter
+
+## Changes:
+- Added backend support in `backend/routes/attendance.ts` for `employeeGroup` query values: `indonesia`, `expatriate`, and `all`
+- Added frontend query support in `src/lib/services/attendanceApi.ts`
+- Added `Employee Type` filter to `src/components/tables/AttendanceDBTable.tsx` with default `Indonesia`
+
+## Notes:
+- `Expatriate` is determined by `StaffNo` prefix `MTIBJ`
+- `Indonesia` includes non-empty employee IDs that do not start with `MTIBJ`
+- Verification passed with `npx tsc --noEmit` and direct API checks for both groups

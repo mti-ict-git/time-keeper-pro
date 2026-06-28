@@ -31,6 +31,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";
+    const employeeGroup = typeof queryParams.employeeGroup === "string" ? queryParams.employeeGroup.trim().toLowerCase() : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
     const maxLimit = 20000;
     const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0
@@ -85,10 +86,21 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
 
     const empIdCandidates = ["employee_id", "employeeid", "emp_id", "empid", "StaffNo"];
     const empIdColumns = empIdCandidates.filter((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+    const staffExpr = empIdColumns.length
+      ? `COALESCE(${empIdColumns.map((c) => `NULLIF(RTRIM(LTRIM([${c}])), '')`).join(", ")}, '')`
+      : "";
     if (employeeId && empIdColumns.length) {
       request.input("employeeId", sql.NVarChar, employeeId);
       const eqParts = empIdColumns.map((c) => `RTRIM(LTRIM([${c}])) = RTRIM(LTRIM(@employeeId))`);
       conditions.push(`(${eqParts.join(" OR ")})`);
+    }
+
+    if (employeeGroup && employeeGroup !== "all" && staffExpr) {
+      if (employeeGroup === "expatriate") {
+        conditions.push(`${staffExpr} LIKE 'MTIBJ%'`);
+      } else if (employeeGroup === "indonesia") {
+        conditions.push(`${staffExpr} <> '' AND ${staffExpr} NOT LIKE 'MTIBJ%'`);
+      }
     }
 
     const deptCandidates = ["department", "dept", "Department"];
@@ -163,6 +175,17 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       }
     }
 
+    function appendSourceIssue(existing: string, issue: string): string {
+      const nextIssue = issue.trim();
+      if (!nextIssue) return existing;
+      const current = existing
+        .split(";")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (current.includes(nextIssue)) return existing;
+      return current.length ? `${current.join("; ")}; ${nextIssue}` : nextIssue;
+    }
+
     const agg = new Map<string, Record<string, unknown>>();
     for (const r of rows) {
       const obj = r as Record<string, unknown>;
@@ -224,6 +247,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         controller_out: "",
         status_in: String(obj["StatusIn"] ?? obj["status_in"] ?? obj["statusin"] ?? ""),
         status_out: String(obj["StatusOut"] ?? obj["status_out"] ?? obj["statusout"] ?? ""),
+        source_issue: "",
       };
       
       if (schedIn) next["scheduled_in"] = schedIn;
@@ -269,6 +293,9 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
           const ao = String(next["actual_out"] || "");
           next["status_out"] = computeStatus(so, ao, false);
         }
+      }
+      if (!isClockIn && !isClockOut && !isMissingClockOut) {
+        next["source_issue"] = appendSourceIssue(String(next["source_issue"] ?? ""), String(evRaw ?? ""));
       }
       agg.set(key, next);
     }
@@ -349,8 +376,20 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       const so = String(v["scheduled_out"] ?? "");
       const ai = String(v["actual_in"] ?? "");
       const ao = String(v["actual_out"] ?? "");
+      const sourceIssue = String(v["source_issue"] ?? "");
       v["status_in"] = computeStatus(si, ai, true);
       v["status_out"] = computeStatus(so, ao, false);
+      if (sourceIssue) {
+        const issueLabel = `Source Issue (${sourceIssue})`;
+        if (!ai && !ao) {
+          v["status_in"] = issueLabel;
+          v["status_out"] = issueLabel;
+        } else if (!ai) {
+          v["status_in"] = issueLabel;
+        } else if (!ao) {
+          v["status_out"] = issueLabel;
+        }
+      }
     }
 
     const data = Array.from(agg.values())

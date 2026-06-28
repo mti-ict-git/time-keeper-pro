@@ -7,6 +7,7 @@ export interface AttendanceQuery {
   search?: string;
   employeeId?: string;
   department?: string;
+  employeeGroup?: "all" | "indonesia" | "expatriate";
   limit?: number;
 }
 
@@ -17,6 +18,7 @@ export async function fetchAttendanceReport(params?: AttendanceQuery): Promise<A
   if (params?.employeeId) qs.set("employeeId", params.employeeId);
   if (params?.search) qs.set("search", params.search);
   if (params?.department) qs.set("department", params.department);
+  if (params?.employeeGroup) qs.set("employeeGroup", params.employeeGroup);
   if (params?.limit) qs.set("limit", String(params.limit));
   const url = buildApiUrl("attendance/report", qs);
   const res = await fetch(url, { headers: { Accept: "application/json" } });

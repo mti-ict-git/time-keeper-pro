@@ -57,6 +57,7 @@ export const AttendanceDBTable = () => {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [employeeGroupFilter, setEmployeeGroupFilter] = useState<"indonesia" | "expatriate" | "all">("indonesia");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -72,7 +73,7 @@ export const AttendanceDBTable = () => {
 
   useEffect(() => {
     const q = debouncedSearch.trim();
-    const staffPattern = /^MTI\d{6}$/;
+    const staffPattern = /^MTI(?:BJ)?\d+$/i;
     const employeeIdParam = staffPattern.test(q) ? q : undefined;
     const searchParam = q.length >= 3 && !employeeIdParam ? q : undefined;
     const hasDateRange = Boolean(dateFrom && dateTo);
@@ -84,12 +85,13 @@ export const AttendanceDBTable = () => {
       search: searchParam,
       employeeId: employeeIdParam,
       department: departmentFilter !== "all" ? departmentFilter : undefined,
+      employeeGroup: employeeGroupFilter,
       limit: requestLimit,
     })
       .then((rows) => setData(rows))
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, [dateFrom, dateTo, debouncedSearch, departmentFilter]);
+  }, [dateFrom, dateTo, debouncedSearch, departmentFilter, employeeGroupFilter]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["department", "dept"])))).filter(Boolean).sort(), [data]);
 
@@ -487,6 +489,7 @@ export const AttendanceDBTable = () => {
         const sout = pick(row.original, ["status_out", "statusout"]);
         const style = (s: string) => {
           const v = s.toLowerCase();
+          if (v.includes("source issue")) return "bg-muted text-foreground border-muted-foreground/20";
           if (v.includes("missing")) return "bg-warning/10 text-warning";
           if (v.includes("late")) return "bg-destructive/10 text-destructive";
           if (v.includes("early")) return "bg-success/10 text-success";
@@ -638,6 +641,17 @@ export const AttendanceDBTable = () => {
               </PopoverContent>
             </Popover>
           </div>
+
+          <Select value={employeeGroupFilter} onValueChange={(value) => setEmployeeGroupFilter(value as "indonesia" | "expatriate" | "all")}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Employee Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="indonesia">Indonesia</SelectItem>
+              <SelectItem value="expatriate">Expatriate</SelectItem>
+              <SelectItem value="all">All Employees</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-[180px]">
