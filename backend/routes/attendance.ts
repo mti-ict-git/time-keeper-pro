@@ -32,7 +32,24 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
-    const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0 ? (limitParam as number) : 200;
+    const maxLimit = 2000;
+    const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0
+      ? Math.min(Math.floor(limitParam as number), maxLimit)
+      : 200;
+
+    if (from && to) {
+      const fromDate = new Date(`${from}T00:00:00Z`);
+      const toDate = new Date(`${to}T00:00:00Z`);
+      const diffDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+      if (!Number.isFinite(diffDays) || diffDays < 0) {
+        res.status(400).json({ error: "Invalid date range" });
+        return;
+      }
+      if (diffDays > 31) {
+        res.status(400).json({ error: "Date range too large (max 31 days)" });
+        return;
+      }
+    }
 
     const request = pool.request();
     const conditions: string[] = [];
@@ -82,7 +99,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
     const timeCol = ["trdatetime"].find((n) => cols.some((c) => c.name.toLowerCase() === n)) || "";
     const orderClause = dateColumn ? ` ORDER BY [${dateColumn}] DESC${timeCol ? `, [${timeCol}] DESC` : ""}` : "";
-    const query = `SELECT TOP ${limit} * FROM tblAttendanceReport${whereClause}${orderClause}`;
+    const query = `SELECT TOP (${limit}) * FROM tblAttendanceReport${whereClause}${orderClause}`;
     const result = await request.query(query);
     const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
 
