@@ -53,19 +53,32 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
 
     const request = pool.request();
     const conditions: string[] = [];
+    const hasDateRange = Boolean(from && to);
+
+    function shiftYmd(dateStr: string, days: number): string {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function isDateWithinRange(dateStr: string, start: string, end: string): boolean {
+      return dateStr >= start && dateStr <= end;
+    }
 
     const dateCandidates = ["trdate", "trdatetime", "date", "attendance_date", "record_date", "event_date"];
     const dateColumn = dateCandidates.find((n) => cols.some((c) => c.name.toLowerCase() === n)) ||
       (cols.find((c) => c.dataType.toLowerCase().includes("date"))?.name ?? "");
 
     if (from && to && dateColumn) {
+      const rawFrom = shiftYmd(from, -1);
+      const rawTo = shiftYmd(to, 1);
       const isDateTimeCol = dateColumn.toLowerCase().includes("datetime");
       if (isDateTimeCol) {
-        request.input("from", sql.DateTime, new Date(`${from}T16:00:00Z`));
-        request.input("to", sql.DateTime, new Date(`${to}T15:59:59Z`));
+        request.input("from", sql.DateTime, new Date(`${rawFrom}T16:00:00Z`));
+        request.input("to", sql.DateTime, new Date(`${rawTo}T15:59:59Z`));
       } else {
-        request.input("from", sql.DateTime, new Date(`${from}T00:00:00`));
-        request.input("to", sql.DateTime, new Date(`${to}T23:59:59`));
+        request.input("from", sql.DateTime, new Date(`${rawFrom}T00:00:00`));
+        request.input("to", sql.DateTime, new Date(`${rawTo}T23:59:59`));
       }
       conditions.push(`[${dateColumn}] BETWEEN @from AND @to`);
     }
@@ -99,7 +112,8 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
     const timeCol = ["trdatetime"].find((n) => cols.some((c) => c.name.toLowerCase() === n)) || "";
     const orderClause = dateColumn ? ` ORDER BY [${dateColumn}] DESC${timeCol ? `, [${timeCol}] DESC` : ""}` : "";
-    const query = `SELECT TOP (${limit}) * FROM tblAttendanceReport${whereClause}${orderClause}`;
+    const queryLimit = hasDateRange ? Math.min(maxLimit, Math.max(limit * 3, limit + 500)) : limit;
+    const query = `SELECT TOP (${queryLimit}) * FROM tblAttendanceReport${whereClause}${orderClause}`;
     const result = await request.query(query);
     const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
 
@@ -339,7 +353,12 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       v["status_out"] = computeStatus(so, ao, false);
     }
 
-    const data = Array.from(agg.values()).sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
+    const data = Array.from(agg.values())
+      .filter((row) => {
+        if (!hasDateRange) return true;
+        return isDateWithinRange(String(row["date"] ?? ""), from, to);
+      })
+      .sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
     res.json({ data, scheduleSource: scheduleMap.size > 0 ? "OrangeScheduleDaily" : "tblAttendanceReport" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

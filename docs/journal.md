@@ -925,3 +925,18 @@ Verification:
 - npm run db:apply-schema executed successfully
 - npx tsc --noEmit ran successfully
 - npm run lint executed; existing warnings remain unrelated to this change
+
+2026-06-28
+
+## Feature:
+- Attendance overnight report range fix
+
+## Changes:
+- Updated `backend/routes/attendance.ts` to widen raw date-range fetching by one day on both sides for report queries
+- Filtered final attendance report rows by computed effective shift date instead of relying only on raw `TrDate` or `TrDateTime`
+- Increased raw fetch limit for ranged queries to avoid dropping overnight partner rows before aggregation
+
+## Notes:
+- Verified `MTI220063` now returns one complete row for `2026-06-25` with `actual_in=22:36` and `actual_out=06:31`
+- Verified range boundaries for `2026-06-24` through `2026-06-26` remain grouped per shift date
+- Verification passed with `npx tsc --noEmit`
