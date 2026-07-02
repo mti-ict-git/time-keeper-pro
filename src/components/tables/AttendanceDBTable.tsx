@@ -13,11 +13,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar, Filter, FileDown, FileSpreadsheet, FileType } from "lucide-react";
 import { AttendanceReportRow, fetchAttendanceReport } from "@/lib/services/attendanceApi";
 import { Badge } from "@/components/ui/badge";
 import { ScheduleBadge } from "@/components/ScheduleBadge";
 import { format as formatDate } from "date-fns";
+import { exportToCSV, exportToPDF, exportToXLSX } from "@/lib/services/exportService";
+import { toast } from "@/hooks/use-toast";
 
 function asText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -496,6 +498,35 @@ export const AttendanceDBTable = () => {
     initialState: { pagination: { pageSize: 10 } },
   });
 
+  const exportRows = useMemo(
+    () => table.getSortedRowModel().rows.map((row) => row.original),
+    [table, filteredData, sorting]
+  );
+
+  const handleExportCSV = (): void => {
+    exportToCSV(exportRows, "attendance_report");
+    toast({
+      title: "Export Successful",
+      description: `Exported ${exportRows.length} attendance row(s) to CSV`,
+    });
+  };
+
+  const handleExportPDF = (): void => {
+    exportToPDF(exportRows, "attendance_report");
+    toast({
+      title: "Export Successful",
+      description: `Exported ${exportRows.length} attendance row(s) to PDF`,
+    });
+  };
+
+  const handleExportXLSX = (): void => {
+    exportToXLSX(exportRows, "attendance_report");
+    toast({
+      title: "Export Successful",
+      description: `Exported ${exportRows.length} attendance row(s) to Excel`,
+    });
+  };
+
   if (loading) {
     return <div className="p-4 text-muted-foreground">Loading attendance report…</div>;
   }
@@ -541,6 +572,19 @@ export const AttendanceDBTable = () => {
               ))}
             </SelectContent>
           </Select>
+
+          <Button variant="outline" onClick={handleExportCSV} disabled={exportRows.length === 0}>
+            <FileDown className="w-4 h-4 mr-2" />
+            CSV
+          </Button>
+          <Button variant="outline" onClick={handleExportPDF} disabled={exportRows.length === 0}>
+            <FileType className="w-4 h-4 mr-2" />
+            PDF
+          </Button>
+          <Button variant="outline" onClick={handleExportXLSX} disabled={exportRows.length === 0}>
+            <FileSpreadsheet className="w-4 h-4 mr-2" />
+            XLSX
+          </Button>
         </div>
       </div>
 
