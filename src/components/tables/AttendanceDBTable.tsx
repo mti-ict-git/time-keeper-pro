@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { DateRange } from "react-day-picker";
 import {
   useReactTable,
   getCoreRowModel,
@@ -11,15 +12,38 @@ import {
 } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Calendar as DateRangeCalendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+} from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowUpDown, Search, Calendar, Filter, FileDown, FileSpreadsheet, FileType } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ArrowUpDown,
+  Search,
+  Calendar as CalendarIcon,
+  Filter,
+  X,
+  FileDown,
+  FileSpreadsheet,
+  FileType,
+} from "lucide-react";
 import { AttendanceReportRow, fetchAttendanceReport } from "@/lib/services/attendanceApi";
 import { Badge } from "@/components/ui/badge";
 import { ScheduleBadge } from "@/components/ScheduleBadge";
 import { format as formatDate } from "date-fns";
 import { exportToCSV, exportToPDF, exportToXLSX } from "@/lib/services/exportService";
 import { toast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 function asText(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -34,6 +58,12 @@ function pick(row: AttendanceReportRow, keys: string[]): string {
   return "";
 }
 
+function toDateValue(value: string): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
 export const AttendanceDBTable = () => {
   const [data, setData] = useState<AttendanceReportRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -42,9 +72,11 @@ export const AttendanceDBTable = () => {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [employeeGroupFilter, setEmployeeGroupFilter] = useState<"indonesia" | "expatriate" | "all">("indonesia");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [dateRangeOpen, setDateRangeOpen] = useState<boolean>(false);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [openFilterId, setOpenFilterId] = useState<string | null>(null);
   const [filterSearch, setFilterSearch] = useState<string>("");
@@ -56,9 +88,11 @@ export const AttendanceDBTable = () => {
 
   useEffect(() => {
     const q = debouncedSearch.trim();
-    const staffPattern = /^MTI\d{6}$/;
+    const staffPattern = /^MTI(?:BJ)?\d+$/i;
     const employeeIdParam = staffPattern.test(q) ? q : undefined;
     const searchParam = q.length >= 3 && !employeeIdParam ? q : undefined;
+    const hasDateRange = Boolean(dateFrom && dateTo);
+    const requestLimit = hasDateRange ? 15000 : (searchParam || employeeIdParam ? 2000 : 2000);
     setLoading(true);
     fetchAttendanceReport({
       from: dateFrom || undefined,
@@ -66,12 +100,13 @@ export const AttendanceDBTable = () => {
       search: searchParam,
       employeeId: employeeIdParam,
       department: departmentFilter !== "all" ? departmentFilter : undefined,
-      limit: searchParam || employeeIdParam ? 500 : undefined,
+      employeeGroup: employeeGroupFilter,
+      limit: requestLimit,
     })
       .then((rows) => setData(rows))
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, [dateFrom, dateTo, debouncedSearch, departmentFilter]);
+  }, [dateFrom, dateTo, debouncedSearch, departmentFilter, employeeGroupFilter]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["department", "dept"])))).filter(Boolean).sort(), [data]);
 
@@ -469,6 +504,7 @@ export const AttendanceDBTable = () => {
         const sout = pick(row.original, ["status_out", "statusout"]);
         const style = (s: string) => {
           const v = s.toLowerCase();
+          if (v.includes("source issue")) return "bg-muted text-foreground border-muted-foreground/20";
           if (v.includes("missing")) return "bg-warning/10 text-warning";
           if (v.includes("late")) return "bg-destructive/10 text-destructive";
           if (v.includes("early")) return "bg-success/10 text-success";
@@ -498,10 +534,50 @@ export const AttendanceDBTable = () => {
     initialState: { pagination: { pageSize: 10 } },
   });
 
-  const exportRows = useMemo(
-    () => table.getSortedRowModel().rows.map((row) => row.original),
-    [table, filteredData, sorting]
-  );
+  const pageCount = table.getPageCount();
+  const currentPage = table.getState().pagination.pageIndex + 1;
+
+  const paginationItems = useMemo(() => {
+    if (pageCount <= 1) return [1];
+
+    const pages = new Set<number>([1, pageCount]);
+    for (let p = currentPage - 1; p <= currentPage + 1; p += 1) {
+      if (p >= 1 && p <= pageCount) pages.add(p);
+    }
+
+    const sortedPages = Array.from(pages).sort((a, b) => a - b);
+    const items: Array<number | "ellipsis"> = [];
+
+    for (let i = 0; i < sortedPages.length; i += 1) {
+      const page = sortedPages[i];
+      const prevPage = sortedPages[i - 1];
+      if (prevPage && page - prevPage > 1) {
+        items.push("ellipsis");
+      }
+      items.push(page);
+    }
+
+    return items;
+  }, [currentPage, pageCount]);
+
+  const selectedDateRange = useMemo<DateRange | undefined>(() => {
+    const from = toDateValue(dateFrom);
+    const to = toDateValue(dateTo);
+    if (!from && !to) return undefined;
+    return { from, to };
+  }, [dateFrom, dateTo]);
+
+  const dateRangeLabel = useMemo(() => {
+    if (dateFrom && dateTo) {
+      return `${formatDate(toDateValue(dateFrom)!, "dd MMM yyyy")} - ${formatDate(toDateValue(dateTo)!, "dd MMM yyyy")}`;
+    }
+    if (dateFrom) {
+      return `${formatDate(toDateValue(dateFrom)!, "dd MMM yyyy")} - ...`;
+    }
+    return "Select date range";
+  }, [dateFrom, dateTo]);
+
+  const exportRows = table.getSortedRowModel().rows.map((row) => row.original);
 
   const handleExportCSV = (): void => {
     exportToCSV(exportRows, "attendance_report");
@@ -555,11 +631,68 @@ export const AttendanceDBTable = () => {
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-[160px]" />
-            <span className="text-sm text-muted-foreground">to</span>
-            <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-[160px]" />
+            <Popover open={dateRangeOpen} onOpenChange={setDateRangeOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-[280px] justify-start text-left font-normal",
+                    !dateFrom && "text-muted-foreground"
+                  )}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  <span className="truncate">{dateRangeLabel}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="end">
+                <div className="border-b px-4 py-3">
+                  <div className="text-sm font-medium">Attendance Date Range</div>
+                  <div className="text-xs text-muted-foreground">Select start and end date from one calendar.</div>
+                </div>
+                <DateRangeCalendar
+                  mode="range"
+                  defaultMonth={selectedDateRange?.from}
+                  selected={selectedDateRange}
+                  onSelect={(range) => {
+                    setDateFrom(range?.from ? formatDate(range.from, "yyyy-MM-dd") : "");
+                    setDateTo(range?.to ? formatDate(range.to, "yyyy-MM-dd") : "");
+                    if (range?.from && range?.to) {
+                      setDateRangeOpen(false);
+                    }
+                  }}
+                  numberOfMonths={2}
+                />
+                <div className="flex items-center justify-between border-t px-4 py-3">
+                  <div className="text-xs text-muted-foreground">
+                    {dateFrom && dateTo ? `${dateFrom} to ${dateTo}` : "No complete range selected"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                    }}
+                  >
+                    <X className="mr-1 h-4 w-4" />
+                    Clear
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
           </div>
+
+          <Select value={employeeGroupFilter} onValueChange={(value) => setEmployeeGroupFilter(value as "indonesia" | "expatriate" | "all")}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Employee Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="indonesia">Indonesia</SelectItem>
+              <SelectItem value="expatriate">Expatriate</SelectItem>
+              <SelectItem value="all">All Employees</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-[180px]">
@@ -621,8 +754,8 @@ export const AttendanceDBTable = () => {
         </Table>
       </div>
 
-      <div className="flex items-center justify-end gap-2 px-4 pb-4">
-        <div className="text-sm text-muted-foreground">
+      <div className="flex flex-col gap-3 px-4 pb-4 sm:flex-row sm:items-center sm:justify-end">
+        <div className="text-sm text-muted-foreground sm:mr-2">
           Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
         </div>
         <div className="flex items-center gap-1">
@@ -632,6 +765,30 @@ export const AttendanceDBTable = () => {
           <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
+          <Pagination className="mx-0 w-auto justify-start">
+            <PaginationContent>
+              {paginationItems.map((item, index) => (
+                <PaginationItem key={item === "ellipsis" ? `ellipsis-${index}` : `page-${item}`}>
+                  {item === "ellipsis" ? (
+                    <PaginationEllipsis />
+                  ) : (
+                    <PaginationLink
+                      href="#"
+                      size="icon"
+                      isActive={table.getState().pagination.pageIndex + 1 === item}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        table.setPageIndex(item - 1);
+                      }}
+                      className="h-9 w-9"
+                    >
+                      {item}
+                    </PaginationLink>
+                  )}
+                </PaginationItem>
+              ))}
+            </PaginationContent>
+          </Pagination>
           <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
             <ChevronRight className="h-4 w-4" />
           </Button>

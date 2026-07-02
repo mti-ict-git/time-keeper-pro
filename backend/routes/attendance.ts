@@ -31,34 +31,76 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";
+    const employeeGroup = typeof queryParams.employeeGroup === "string" ? queryParams.employeeGroup.trim().toLowerCase() : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
-    const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0 ? (limitParam as number) : 200;
+    const maxLimit = 20000;
+    const limit = Number.isFinite(limitParam || NaN) && (limitParam as number) > 0
+      ? Math.min(Math.floor(limitParam as number), maxLimit)
+      : 200;
+
+    if (from && to) {
+      const fromDate = new Date(`${from}T00:00:00Z`);
+      const toDate = new Date(`${to}T00:00:00Z`);
+      const diffDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+      if (!Number.isFinite(diffDays) || diffDays < 0) {
+        res.status(400).json({ error: "Invalid date range" });
+        return;
+      }
+      if (diffDays > 31) {
+        res.status(400).json({ error: "Date range too large (max 31 days)" });
+        return;
+      }
+    }
 
     const request = pool.request();
     const conditions: string[] = [];
+    const hasDateRange = Boolean(from && to);
+
+    function shiftYmd(dateStr: string, days: number): string {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+
+    function isDateWithinRange(dateStr: string, start: string, end: string): boolean {
+      return dateStr >= start && dateStr <= end;
+    }
 
     const dateCandidates = ["trdate", "trdatetime", "date", "attendance_date", "record_date", "event_date"];
     const dateColumn = dateCandidates.find((n) => cols.some((c) => c.name.toLowerCase() === n)) ||
       (cols.find((c) => c.dataType.toLowerCase().includes("date"))?.name ?? "");
 
     if (from && to && dateColumn) {
+      const rawFrom = shiftYmd(from, -1);
+      const rawTo = shiftYmd(to, 1);
       const isDateTimeCol = dateColumn.toLowerCase().includes("datetime");
       if (isDateTimeCol) {
-        request.input("from", sql.DateTime, new Date(`${from}T16:00:00Z`));
-        request.input("to", sql.DateTime, new Date(`${to}T15:59:59Z`));
+        request.input("from", sql.DateTime, new Date(`${rawFrom}T16:00:00Z`));
+        request.input("to", sql.DateTime, new Date(`${rawTo}T15:59:59Z`));
       } else {
-        request.input("from", sql.DateTime, new Date(`${from}T00:00:00`));
-        request.input("to", sql.DateTime, new Date(`${to}T23:59:59`));
+        request.input("from", sql.DateTime, new Date(`${rawFrom}T00:00:00`));
+        request.input("to", sql.DateTime, new Date(`${rawTo}T23:59:59`));
       }
       conditions.push(`[${dateColumn}] BETWEEN @from AND @to`);
     }
 
     const empIdCandidates = ["employee_id", "employeeid", "emp_id", "empid", "StaffNo"];
     const empIdColumns = empIdCandidates.filter((n) => cols.some((c) => c.name.toLowerCase() === n.toLowerCase()));
+    const staffExpr = empIdColumns.length
+      ? `COALESCE(${empIdColumns.map((c) => `NULLIF(RTRIM(LTRIM([${c}])), '')`).join(", ")}, '')`
+      : "";
     if (employeeId && empIdColumns.length) {
       request.input("employeeId", sql.NVarChar, employeeId);
       const eqParts = empIdColumns.map((c) => `RTRIM(LTRIM([${c}])) = RTRIM(LTRIM(@employeeId))`);
       conditions.push(`(${eqParts.join(" OR ")})`);
+    }
+
+    if (employeeGroup && employeeGroup !== "all" && staffExpr) {
+      if (employeeGroup === "expatriate") {
+        conditions.push(`${staffExpr} LIKE 'MTIBJ%'`);
+      } else if (employeeGroup === "indonesia") {
+        conditions.push(`${staffExpr} <> '' AND ${staffExpr} NOT LIKE 'MTIBJ%'`);
+      }
     }
 
     const deptCandidates = ["department", "dept", "Department"];
@@ -82,7 +124,8 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const whereClause = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
     const timeCol = ["trdatetime"].find((n) => cols.some((c) => c.name.toLowerCase() === n)) || "";
     const orderClause = dateColumn ? ` ORDER BY [${dateColumn}] DESC${timeCol ? `, [${timeCol}] DESC` : ""}` : "";
-    const query = `SELECT TOP ${limit} * FROM tblAttendanceReport${whereClause}${orderClause}`;
+    const queryLimit = hasDateRange ? Math.min(maxLimit, Math.max(limit * 3, limit + 500)) : limit;
+    const query = `SELECT TOP (${queryLimit}) * FROM tblAttendanceReport${whereClause}${orderClause}`;
     const result = await request.query(query);
     const rows = (result.recordset ?? []) as unknown as Array<Record<string, unknown>>;
 
@@ -130,6 +173,17 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         if (diff <= onTimeThreshold) return "On Time";
         return "Late";
       }
+    }
+
+    function appendSourceIssue(existing: string, issue: string): string {
+      const nextIssue = issue.trim();
+      if (!nextIssue) return existing;
+      const current = existing
+        .split(";")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      if (current.includes(nextIssue)) return existing;
+      return current.length ? `${current.join("; ")}; ${nextIssue}` : nextIssue;
     }
 
     const agg = new Map<string, Record<string, unknown>>();
@@ -193,6 +247,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
         controller_out: "",
         status_in: String(obj["StatusIn"] ?? obj["status_in"] ?? obj["statusin"] ?? ""),
         status_out: String(obj["StatusOut"] ?? obj["status_out"] ?? obj["statusout"] ?? ""),
+        source_issue: "",
       };
       
       if (schedIn) next["scheduled_in"] = schedIn;
@@ -238,6 +293,9 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
           const ao = String(next["actual_out"] || "");
           next["status_out"] = computeStatus(so, ao, false);
         }
+      }
+      if (!isClockIn && !isClockOut && !isMissingClockOut) {
+        next["source_issue"] = appendSourceIssue(String(next["source_issue"] ?? ""), String(evRaw ?? ""));
       }
       agg.set(key, next);
     }
@@ -318,11 +376,28 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
       const so = String(v["scheduled_out"] ?? "");
       const ai = String(v["actual_in"] ?? "");
       const ao = String(v["actual_out"] ?? "");
+      const sourceIssue = String(v["source_issue"] ?? "");
       v["status_in"] = computeStatus(si, ai, true);
       v["status_out"] = computeStatus(so, ao, false);
+      if (sourceIssue) {
+        const issueLabel = `Source Issue (${sourceIssue})`;
+        if (!ai && !ao) {
+          v["status_in"] = issueLabel;
+          v["status_out"] = issueLabel;
+        } else if (!ai) {
+          v["status_in"] = issueLabel;
+        } else if (!ao) {
+          v["status_out"] = issueLabel;
+        }
+      }
     }
 
-    const data = Array.from(agg.values()).sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
+    const data = Array.from(agg.values())
+      .filter((row) => {
+        if (!hasDateRange) return true;
+        return isDateWithinRange(String(row["date"] ?? ""), from, to);
+      })
+      .sort((a, b) => String(b["date"] || "").localeCompare(String(a["date"] || "")));
     res.json({ data, scheduleSource: scheduleMap.size > 0 ? "OrangeScheduleDaily" : "tblAttendanceReport" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -354,10 +429,11 @@ const attPythonExe = (process.env.ATTENDANCE_PYTHON ?? "").trim() || "python";
 const attScriptRel = (process.env.ATTENDANCE_SCRIPT ?? "").trim() || "backend/attendance_report_modv8_1.py";
 const attJobName = (process.env.ATTENDANCE_JOB_NAME ?? "").trim() || "attendance_ingest_v1";
 const attWaid = (process.env.ATTENDANCE_WAID ?? "").trim();
-const attRunTimeoutMsRaw = process.env.ATTENDANCE_RUN_TIMEOUT_MS ? Number(process.env.ATTENDANCE_RUN_TIMEOUT_MS) : 5 * 60 * 1000;
-const attRunTimeoutMs = Number.isFinite(attRunTimeoutMsRaw) && attRunTimeoutMsRaw > 0
+const defaultAttRunTimeoutMs = 30 * 60 * 1000;
+const attRunTimeoutMsRaw = process.env.ATTENDANCE_RUN_TIMEOUT_MS ? Number(process.env.ATTENDANCE_RUN_TIMEOUT_MS) : defaultAttRunTimeoutMs;
+const attRunTimeoutMs = Number.isFinite(attRunTimeoutMsRaw) && attRunTimeoutMsRaw >= 0
   ? Math.floor(attRunTimeoutMsRaw)
-  : 5 * 60 * 1000;
+  : defaultAttRunTimeoutMs;
 const attUseDbSettings = String(process.env.ATTENDANCE_USE_DB_SETTINGS ?? "")
   .trim()
   .toLowerCase() === "true";
@@ -470,8 +546,10 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
     let out = "";
     let err = "";
     let settled = false;
+    let timedOut = false;
     let hardTimeout: NodeJS.Timeout | null = null;
-    const timeout = setTimeout(() => {
+    const timeout = attRunTimeoutMs > 0 ? setTimeout(() => {
+      timedOut = true;
       try {
         child.kill();
       } catch {
@@ -518,15 +596,15 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
           stderr: err,
         });
       }, 5000);
-    }, attRunTimeoutMs);
-
+    }, attRunTimeoutMs) : null;
     const resolveOnce = (log: AttendanceRunLog): void => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       if (hardTimeout) clearTimeout(hardTimeout);
       resolve(log);
     };
+
 
     child.stdout.on("data", (d: Buffer) => {
       out += d.toString("utf8");
@@ -553,9 +631,9 @@ function runAttendancePythonWithArgs(args: string[], envOverride?: Record<string
         startedAt,
         finishedAt,
         durationMs: finishedAt.getTime() - startedAt.getTime(),
-        success: code === 0,
+        success: code === 0 && !timedOut,
         exitCode: typeof code === "number" ? code : null,
-        error: code === 0 ? undefined : `Exited with code ${String(code)}`,
+        error: timedOut ? `Timed out after ${attRunTimeoutMs}ms` : code === 0 ? undefined : `Exited with code ${String(code)}`,
         stdout: out,
         stderr: err,
       });
@@ -760,6 +838,7 @@ attendanceRouter.get("/runner/status", (_req: Request, res: Response) => {
     python: attPythonExe,
     script: attScriptRel,
     jobName: attJobName,
+    runTimeoutMs: attRunTimeoutMs,
     lastRun: attLastRun,
   });
 });
