@@ -1,18 +1,12 @@
 import { Link } from 'react-router-dom';
-import { useAppStore } from '@/lib/services/store';
 import { AttendanceDBTable } from '@/components/tables/AttendanceDBTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { exportToCSV, exportToXLSX, exportToPDF } from '@/lib/services/exportService';
-import { toast } from '@/hooks/use-toast';
 import {
   ArrowRight,
   Calendar,
   ClipboardList,
   FileDown,
-  FileSpreadsheet,
-  FileText,
-  FileType,
   LayoutDashboard,
   Search,
   ShieldCheck,
@@ -20,33 +14,7 @@ import {
 } from 'lucide-react';
 
 const AttendanceRecords = () => {
-  const { attendanceRecords } = useAppStore();
   const exportFormats = 3;
-  const localRows = attendanceRecords.length;
-
-  const handleExportCSV = () => {
-    exportToCSV(attendanceRecords);
-    toast({
-      title: 'Export Successful',
-      description: 'Attendance records exported to CSV',
-    });
-  };
-
-  const handleExportXLSX = () => {
-    exportToXLSX(attendanceRecords);
-    toast({
-      title: 'Export Successful',
-      description: 'Attendance records exported to Excel',
-    });
-  };
-
-  const handleExportPDF = () => {
-    exportToPDF(attendanceRecords);
-    toast({
-      title: 'Export Successful',
-      description: 'Attendance records exported to PDF',
-    });
-  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -79,8 +47,8 @@ const AttendanceRecords = () => {
                   <p className="mt-1 text-sm font-medium text-white">{exportFormats} formats</p>
                 </div>
                 <div className="rounded-2xl border border-white/15 bg-white/8 px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">Local Export Cache</p>
-                  <p className="mt-1 text-sm font-medium text-white">{localRows} rows</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/62">Export Source</p>
+                  <p className="mt-1 text-sm font-medium text-white">Live filtered table</p>
                 </div>
               </div>
 
@@ -89,7 +57,7 @@ const AttendanceRecords = () => {
                   <ShieldCheck className="mt-0.5 h-5 w-5 text-emerald-300" />
                   <div className="space-y-1 text-sm leading-6 text-white/78">
                     <p className="font-medium text-white">Attendance workspace is ready for daily operational use.</p>
-                    <p>Use the table below for live filtering, review exception patterns by employee or date range, then export the result in the format your team needs.</p>
+                    <p>Use the table below for live filtering, review exception patterns by employee or date range, then export the exact result set shown in the table.</p>
                   </div>
                 </div>
               </div>
@@ -130,73 +98,6 @@ const AttendanceRecords = () => {
             </div>
           </div>
         </CardContent>
-      </Card>
-
-      <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
-        <CardHeader className="space-y-4 pb-2">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
-                Export Center
-              </div>
-              <CardTitle className="text-2xl font-semibold tracking-[-0.035em] text-foreground">Distribute attendance reports in the required format</CardTitle>
-              <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Use exports after review to share attendance data with operations, payroll, audit, or supervisors in the format that best fits downstream processing.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Button variant="outline" onClick={handleExportCSV} className="h-11 rounded-2xl px-5 text-sm font-semibold">
-                <FileDown className="mr-2 h-4 w-4" />
-                CSV
-              </Button>
-              <Button variant="outline" onClick={handleExportPDF} className="h-11 rounded-2xl px-5 text-sm font-semibold">
-                <FileType className="mr-2 h-4 w-4" />
-                PDF
-              </Button>
-              <Button variant="outline" onClick={handleExportXLSX} className="h-11 rounded-2xl px-5 text-sm font-semibold">
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                XLSX
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-accent/10 text-accent">
-                  <FileText className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Structured Reporting</p>
-                  <p className="text-sm text-muted-foreground">Prepare attendance files for stakeholders with different reporting needs.</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-primary/10 text-primary">
-                  <Search className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Review Before Export</p>
-                  <p className="text-sm text-muted-foreground">Apply table filters first so exported files reflect the exact operational scope.</p>
-                </div>
-              </div>
-            </div>
-            <div className="rounded-[24px] border border-border/70 bg-slate-950/[0.03] p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border/70 bg-success/10 text-success">
-                  <ClipboardList className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">Operational Handoff</p>
-                  <p className="text-sm text-muted-foreground">Supports audit sharing, payroll follow-up, and frontline attendance review.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardHeader>
       </Card>
 
       <Card className="rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.50)]">
@@ -243,7 +144,7 @@ const AttendanceRecords = () => {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">Reporting Output</p>
-                  <p className="text-sm text-muted-foreground">Move directly from review into export once the dataset is scoped correctly.</p>
+                  <p className="text-sm text-muted-foreground">Move directly from review into export once the dataset is scoped correctly inside the table.</p>
                 </div>
               </div>
             </div>

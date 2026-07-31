@@ -1,16 +1,98 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { ProcessedAttendanceRecord } from '../models';
 import { format } from 'date-fns';
+import type { ProcessedAttendanceRecord } from '../models';
 import type { SchedulingEmployee } from './schedulingApi';
+
+type AttendanceExportSource = ProcessedAttendanceRecord | Record<string, unknown>;
+
+type AttendanceExportRow = {
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  position: string;
+  date: string;
+  schedule: string;
+  scheduledIn: string;
+  scheduledOut: string;
+  actualIn: string;
+  actualOut: string;
+  controller: string;
+  statusIn: string;
+  statusOut: string;
+  sourceIssue: string;
+};
+
+function asText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function pickRecordValue(record: AttendanceExportSource, keys: string[]): string {
+  const data = record as Record<string, unknown>;
+  for (const key of keys) {
+    const value = data[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return '';
+}
+
+function formatDateValue(value: unknown): string {
+  if (!value) return '';
+  if (value instanceof Date) return format(value, 'yyyy-MM-dd');
+  const raw = String(value).trim();
+  if (!raw) return '';
+  const normalized = raw.length <= 10 ? `${raw}T00:00:00` : raw;
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return raw.slice(0, 10);
+  return format(parsed, 'yyyy-MM-dd');
+}
+
+function normalizeAttendanceExportRows(records: AttendanceExportSource[]): AttendanceExportRow[] {
+  return records.map((record) => {
+    const controllerIn = pickRecordValue(record, ['controller_in']);
+    const controllerOut = pickRecordValue(record, ['controller_out']);
+    const controller =
+      controllerIn && controllerOut && controllerIn !== controllerOut
+        ? `${controllerIn} | ${controllerOut}`
+        : controllerIn || controllerOut || pickRecordValue(record, ['controllerName', 'controller_name']) || 'N/A';
+
+    const actualIn = pickRecordValue(record, ['actual_in', 'actualIn']) || 'N/A';
+    const actualOut = pickRecordValue(record, ['actual_out', 'actualOut']) || 'N/A';
+    const statusIn = pickRecordValue(record, ['status_in', 'statusIn', 'statusin']) || 'N/A';
+    const statusOut = pickRecordValue(record, ['status_out', 'statusOut', 'statusout']) || 'N/A';
+    const sourceIssue = pickRecordValue(record, ['source_issue']);
+
+    return {
+      employeeId: pickRecordValue(record, ['employee_id', 'employeeId', 'employeeid', 'StaffNo', 'EmpID', 'emp_id', 'empid']),
+      employeeName: pickRecordValue(record, ['employee_name', 'employeeName', 'name']),
+      department: pickRecordValue(record, ['department', 'dept']),
+      position: pickRecordValue(record, ['position_title', 'position', 'Title']),
+      date: formatDateValue((record as Record<string, unknown>).date ?? (record as Record<string, unknown>).attendance_date ?? (record as Record<string, unknown>).record_date),
+      schedule: pickRecordValue(record, ['schedule_label', 'scheduleName']),
+      scheduledIn: pickRecordValue(record, ['scheduled_in', 'scheduledIn']) || 'N/A',
+      scheduledOut: pickRecordValue(record, ['scheduled_out', 'scheduledOut']) || 'N/A',
+      actualIn,
+      actualOut,
+      controller,
+      statusIn,
+      statusOut,
+      sourceIssue: sourceIssue || 'N/A',
+    };
+  });
+}
 
 // Export to CSV
 export const exportToCSV = (
-  records: ProcessedAttendanceRecord[],
+  records: AttendanceExportSource[],
   filename: string = 'attendance_records'
 ): void => {
+  const normalized = normalizeAttendanceExportRows(records);
   const headers = [
+    'Employee ID',
     'Name',
     'Department',
     'Position',
@@ -23,23 +105,24 @@ export const exportToCSV = (
     'Controller',
     'Status In',
     'Status Out',
-    'Validity',
+    'Source Issue',
   ];
 
-  const rows = records.map((record) => [
+  const rows = normalized.map((record) => [
+    record.employeeId,
     record.employeeName,
     record.department,
     record.position,
-    format(new Date(record.date), 'yyyy-MM-dd'),
-    record.scheduleName,
+    record.date,
+    record.schedule,
     record.scheduledIn,
     record.scheduledOut,
-    record.actualIn || 'N/A',
-    record.actualOut || 'N/A',
-    record.controllerName || 'N/A',
+    record.actualIn,
+    record.actualOut,
+    record.controller,
     record.statusIn,
     record.statusOut,
-    record.validity,
+    record.sourceIssue,
   ]);
 
   const csvContent = [
@@ -57,23 +140,25 @@ export const exportToCSV = (
 
 // Export to XLSX
 export const exportToXLSX = (
-  records: ProcessedAttendanceRecord[],
+  records: AttendanceExportSource[],
   filename: string = 'attendance_records'
 ): void => {
-  const data = records.map((record) => ({
+  const normalized = normalizeAttendanceExportRows(records);
+  const data = normalized.map((record) => ({
+    'Employee ID': record.employeeId,
     Name: record.employeeName,
     Department: record.department,
     Position: record.position,
-    Date: format(new Date(record.date), 'yyyy-MM-dd'),
-    Schedule: record.scheduleName,
+    Date: record.date,
+    Schedule: record.schedule,
     'Scheduled In': record.scheduledIn,
     'Scheduled Out': record.scheduledOut,
-    'Actual In': record.actualIn || 'N/A',
-    'Actual Out': record.actualOut || 'N/A',
-    Controller: record.controllerName || 'N/A',
+    'Actual In': record.actualIn,
+    'Actual Out': record.actualOut,
+    Controller: record.controller,
     'Status In': record.statusIn,
     'Status Out': record.statusOut,
-    Validity: record.validity,
+    'Source Issue': record.sourceIssue,
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(data);
@@ -82,6 +167,7 @@ export const exportToXLSX = (
 
   // Set column widths
   const colWidths = [
+    { wch: 14 }, // Employee ID
     { wch: 20 }, // Name
     { wch: 15 }, // Department
     { wch: 15 }, // Position
@@ -94,7 +180,7 @@ export const exportToXLSX = (
     { wch: 15 }, // Controller
     { wch: 10 }, // Status In
     { wch: 10 }, // Status Out
-    { wch: 10 }, // Validity
+    { wch: 18 }, // Source Issue
   ];
   worksheet['!cols'] = colWidths;
 
@@ -152,10 +238,11 @@ export const exportSchedulingEmployeesToXLSX = (
 
 // Export to PDF
 export const exportToPDF = (
-  records: ProcessedAttendanceRecord[],
+  records: AttendanceExportSource[],
   filename: string = 'attendance_records'
 ): void => {
   const doc = new jsPDF('l', 'mm', 'a4');
+  const normalized = normalizeAttendanceExportRows(records);
 
   // Title
   doc.setFontSize(16);
@@ -163,18 +250,18 @@ export const exportToPDF = (
   doc.setFontSize(10);
   doc.text(`Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`, 14, 22);
 
-  const tableData = records.map((record) => [
+  const tableData = normalized.map((record) => [
+    record.employeeId,
     record.employeeName,
     record.department,
-    format(new Date(record.date), 'yyyy-MM-dd'),
-    record.scheduleName,
-    record.scheduledIn,
-    record.scheduledOut,
-    record.actualIn || 'N/A',
-    record.actualOut || 'N/A',
+    record.date,
+    record.schedule,
+    record.actualIn,
+    record.actualOut,
+    record.controller,
     record.statusIn,
     record.statusOut,
-    record.validity,
+    record.sourceIssue,
   ]);
 
   autoTable(doc, {
@@ -184,19 +271,18 @@ export const exportToPDF = (
         'Department',
         'Date',
         'Schedule',
-        'Sched In',
-        'Sched Out',
         'Actual In',
         'Actual Out',
+        'Controller',
         'Status In',
         'Status Out',
-        'Validity',
+        'Source Issue',
       ],
     ],
     body: tableData,
     startY: 28,
     styles: {
-      fontSize: 8,
+      fontSize: 7,
       cellPadding: 2,
     },
     headStyles: {
@@ -213,22 +299,19 @@ export const exportToPDF = (
         const statusColumns = [8, 9]; // Status In and Status Out columns
         if (statusColumns.includes(data.column.index)) {
           const value = data.cell.text[0]?.toLowerCase();
-          if (value === 'early') {
-            data.cell.styles.textColor = [217, 119, 6]; // Warning yellow
-          } else if (value === 'ontime') {
-            data.cell.styles.textColor = [22, 163, 74]; // Success green
-          } else if (value === 'late') {
-            data.cell.styles.textColor = [220, 38, 38]; // Destructive red
-          } else if (value === 'missing') {
-            data.cell.styles.textColor = [107, 114, 128]; // Muted gray
+          if (value.includes('early')) {
+            data.cell.styles.textColor = [217, 119, 6];
+          } else if (value.includes('on time') || value.includes('ontime')) {
+            data.cell.styles.textColor = [22, 163, 74];
+          } else if (value.includes('late')) {
+            data.cell.styles.textColor = [220, 38, 38];
+          } else if (value.includes('missing') || value.includes('source issue')) {
+            data.cell.styles.textColor = [107, 114, 128];
           }
         }
-        // Validity column
         if (data.column.index === 10) {
           const value = data.cell.text[0]?.toLowerCase();
-          if (value === 'valid') {
-            data.cell.styles.textColor = [22, 163, 74];
-          } else {
+          if (value && value !== 'n/a') {
             data.cell.styles.textColor = [220, 38, 38];
           }
         }
