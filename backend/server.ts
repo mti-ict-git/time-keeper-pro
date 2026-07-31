@@ -10,6 +10,7 @@ import { syncRouter } from "./routes/sync";
 import { authRouter } from "./routes/auth";
 import { controllersRouter } from "./routes/controllers";
 import { authLocalRouter } from "./routes/auth_local";
+import { operationsRouter } from "./routes/operations";
 
 type MtiUserRow = {
   employee_id: string;
@@ -146,6 +147,7 @@ app.use("/api/sync", syncRouter);
 app.use("/api/controllers", controllersRouter);
 app.use("/api/auth/local", authLocalRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/operations", operationsRouter);
 
 
 app.get("/api/health", (_req: Request, res: Response) => {

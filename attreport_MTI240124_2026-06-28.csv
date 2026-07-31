@@ -1,0 +1,3 @@
+CardNo,Name,Title,Position,Department,CardType,Company,StaffNo,Transaction Date Time,Transaction Date,Transaction Status,TrController,UnitNo,InsertDate,ClockEvent,ScheduledClockIn,ScheduledClockOut
+2073708619,HERMAN,BENTONITE OPERATOR,Non Staff,CHLORIDE PLANT,,Merdeka Tsingshan Indonesia,MTI240124,2026-06-28 07:15:12,2026-06-28,Valid Entry Access,FR-Chloride Pos Security-5633,0006,2026-06-28 21:25:44,Clock In,2026-06-28 07:00:00,2026-06-28 15:00:00
+2073708619,HERMAN,BENTONITE OPERATOR,Non Staff,CHLORIDE PLANT,,Merdeka Tsingshan Indonesia,MTI240124,2026-06-28 18:39:24,2026-06-28,Valid Entry Access,FR-Chloride Pos Security-5633,0006,2026-06-28 21:25:44,Clock Out,2026-06-28 07:00:00,2026-06-28 15:00:00

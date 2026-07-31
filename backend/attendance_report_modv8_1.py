@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta
 import requests
 import logging
 import argparse
+import base64
 import os
 import warnings
 import platform
@@ -42,6 +43,10 @@ def parse_arguments():
     parser.add_argument('--dry-run', action='store_true', help='Generate report without writing to any DB tables')
     parser.add_argument('--incremental', action='store_true', help='Run incremental ingestion mode (no WhatsApp, no full backscan)')
     parser.add_argument('--push-mcg', action='store_true', help='Push pending Clock In/Out rows to mcg_clocking_tbl (idempotent)')
+    parser.add_argument('--push-start-date', help='Only push attendance on/after this date (YYYY-MM-DD)')
+    parser.add_argument('--push-end-date', help='Only push attendance on/before this date (YYYY-MM-DD)')
+    parser.add_argument('--push-staff-no', help='Only push attendance for this StaffNo')
+    parser.add_argument('--repush', action='store_true', help='Include already processed rows; target insert remains idempotent')
     parser.add_argument('--push-limit', type=int, default=5000, help='Max rows to push per run when using --push-mcg')
     parser.add_argument('--run-10min', action='store_true', help='Single command: incremental ingest + auto push at 00:00 and 12:00 window')
     parser.add_argument('--push-now-report', action='store_true', help='Push pending rows to mcg_clocking_tbl now and send WhatsApp report immediately')
@@ -54,6 +59,7 @@ def parse_arguments():
     parser.add_argument('--start-date', help='Start date for attendance report (YYYY-MM-DD)')
     parser.add_argument('--end-date', help='End date for attendance report (YYYY-MM-DD)')
     parser.add_argument('--staff-no', help='Filter by specific staff number (e.g., MTI250034)')
+    parser.add_argument('--no-report', action='store_true', help='Skip CSV export and WhatsApp report')
     return parser.parse_args()
 
 def _resolve_waid(cli_waid):
@@ -101,6 +107,10 @@ def get_config():
     orange_pwd = os.getenv("ORANGE_DB_PASSWORD") or "morowali"
 
     whatsapp_api_url = os.getenv("WHATSAPP_API_URL") or "http://10.60.10.46:8192/send-group-message"
+    use_openwa = str(os.getenv("USE_OPENWA") or "false").strip().lower() in ("1", "true", "yes", "on")
+    openwa_base_url = (os.getenv("OPENWA_BASE_URL") or "").strip().rstrip('/')
+    openwa_api_key = (os.getenv("OPENWA_API_KEY") or "").strip()
+    openwa_session_id = (os.getenv("OPENWA_SESSION_ID") or "").strip()
 
     tr_controller_list_raw = os.getenv("TR_CONTROLLER_LIST")
     if tr_controller_list_raw is not None and str(tr_controller_list_raw).strip() != "":
@@ -152,7 +162,11 @@ def get_config():
             'clock_out_late_hours': clock_out_late_hours,
         },
         'TOLERANCE_SECONDS': clock_in_early_hours * 3600,
-        'whatsapp_api_url': whatsapp_api_url
+        'whatsapp_api_url': whatsapp_api_url,
+        'use_openwa': use_openwa,
+        'openwa_base_url': openwa_base_url,
+        'openwa_api_key': openwa_api_key,
+        'openwa_session_id': openwa_session_id,
     }
     return config
 
@@ -1018,7 +1032,7 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
             print("No records with Processed = 0 found for mcg_clocking_tbl insertion.")
     return inserted_count, skipped_count, mcg_success_count, error_count, last_ok_dt, last_ok_card
 
-def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
+def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False, start_date=None, end_date=None, staff_no=None, repush=False):
     conn_data_emp = connect_data_employee(config)
     conn_orange = connect_orange_temp(config)
     try:
@@ -1026,7 +1040,21 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
 
         limit_rows = max(1, int(limit_rows))
         cursor_emp = conn_data_emp.cursor(as_dict=True)
-        cursor_emp.execute(f"""
+        filters = ["StaffNo LIKE 'MTI%'", "ClockEvent IN ('Clock In', 'Clock Out')"]
+        params = []
+        if not repush:
+            filters.insert(0, "Processed = 0")
+        if start_date:
+            filters.append("TrDate >= %s")
+            params.append(start_date)
+        if end_date:
+            filters.append("TrDate <= %s")
+            params.append(end_date)
+        if staff_no:
+            filters.append("StaffNo = %s")
+            params.append(staff_no)
+        where_clause = " AND ".join(filters)
+        push_query = f"""
             SELECT TOP ({limit_rows})
                 ID,
                 StaffNo,
@@ -1036,9 +1064,13 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
                 ClockEvent,
                 UnitNo
             FROM dbo.tblAttendanceReport
-            WHERE Processed = 0 AND StaffNo LIKE 'MTI%' AND ClockEvent IN ('Clock In', 'Clock Out')
+            WHERE {where_clause}
             ORDER BY TrDateTime ASC, StaffNo ASC
-        """)
+        """
+        if params:
+            cursor_emp.execute(push_query, tuple(params))
+        else:
+            cursor_emp.execute(push_query)
         rows = cursor_emp.fetchall()
         cursor_emp.close()
 
@@ -1094,25 +1126,84 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False):
 # --------------------------------------------------------------------------
 # 7. WHATSAPP NOTIFIER
 # --------------------------------------------------------------------------
-def send_media_group(chatid, message, file_path, file_type, api_url):
+def _openwa_headers(config):
+    return {
+        'X-API-Key': config['openwa_api_key'],
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+
+def _resolve_openwa_chat_id(config, target):
+    if '@' in target:
+        return target
+
+    url = f"{config['openwa_base_url']}/api/sessions/{config['openwa_session_id']}/groups"
+    response = requests.get(
+        url,
+        headers=_openwa_headers(config),
+        params={'limit': 1000, 'offset': 0},
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    groups = payload if isinstance(payload, list) else payload.get('data', payload.get('groups', []))
+    target_lower = target.casefold()
+    for group in groups:
+        name = str(group.get('name') or group.get('subject') or group.get('title') or '').strip()
+        if name.casefold() == target_lower:
+            chat_id = group.get('id') or group.get('chatId') or group.get('wid')
+            if isinstance(chat_id, dict):
+                chat_id = chat_id.get('_serialized') or chat_id.get('user')
+            if chat_id:
+                return str(chat_id)
+    raise ValueError(f"OpenWA group not found: {target}")
+
+def _send_media_openwa(config, chatid, message, file_path, mime_type):
+    required = ('openwa_base_url', 'openwa_api_key', 'openwa_session_id')
+    missing = [name for name in required if not config.get(name)]
+    if missing:
+        raise ValueError(f"Missing OpenWA configuration: {', '.join(missing)}")
+
+    target = _resolve_openwa_chat_id(config, str(chatid).strip())
+    with open(file_path, 'rb') as f:
+        encoded = base64.b64encode(f.read()).decode('ascii')
+    url = f"{config['openwa_base_url']}/api/sessions/{config['openwa_session_id']}/messages/send-document"
+    payload = {
+        'chatId': target,
+        'base64': encoded,
+        'mimetype': mime_type,
+        'filename': os.path.basename(file_path),
+        'caption': message,
+    }
+    response = requests.post(url, headers=_openwa_headers(config), json=payload, timeout=120)
+    response.raise_for_status()
+    return response
+
+def send_media_group(chatid, message, file_path, file_type, api_url, config=None):
     if chatid:
         try:
             target = str(chatid).strip()
-            with open(file_path, 'rb') as f:
-                if file_path.lower().endswith('.csv'):
-                    mime_type = 'text/csv'
-                elif file_path.lower().endswith('.xlsx'):
-                    mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                else:
-                    mime_type = 'application/octet-stream'
-                files = {file_type: (file_path, f.read(), mime_type)}
-                data = {'message': message}
-                if ("@" in target) or target.replace("-", "").isdigit():
-                    data['id'] = target
-                else:
-                    data['name'] = target
-                response = requests.post(api_url, files=files, data=data)
-            if response.status_code == 200:
+            if file_path.lower().endswith('.csv'):
+                mime_type = 'text/csv'
+            elif file_path.lower().endswith('.xlsx'):
+                mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            elif file_path.lower().endswith('.txt'):
+                mime_type = 'text/plain'
+            else:
+                mime_type = 'application/octet-stream'
+
+            if config and config.get('use_openwa'):
+                response = _send_media_openwa(config, target, message, file_path, mime_type)
+            else:
+                with open(file_path, 'rb') as f:
+                    files = {file_type: (file_path, f.read(), mime_type)}
+                    data = {'message': message}
+                    if ("@" in target) or target.replace("-", "").isdigit():
+                        data['id'] = target
+                    else:
+                        data['name'] = target
+                    response = requests.post(api_url, files=files, data=data, timeout=120)
+            if response.status_code in (200, 201, 202):
                 logging.info('Message sent successfully!')
                 print('Message sent successfully!')
             else:
@@ -1150,12 +1241,12 @@ def send_whatsapp_push_report(config, waid, title, total_transactions, valid_tra
     if len(df) > 0:
         filename = f"attendance_push_{slot.replace(':','').replace('T','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         df.to_csv(filename, index=False)
-        send_media_group(waid, msg, filename, 'document', config['whatsapp_api_url'])
+        send_media_group(waid, msg, filename, 'document', config['whatsapp_api_url'], config)
     else:
         tmp_name = f"attendance_push_{slot.replace(':','').replace('T','_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         with open(tmp_name, "w", encoding="utf-8") as f:
             f.write(msg)
-        send_media_group(waid, msg, tmp_name, 'document', config['whatsapp_api_url'])
+        send_media_group(waid, msg, tmp_name, 'document', config['whatsapp_api_url'], config)
 
 # --------------------------------------------------------------------------
 # 7.1 MISSING CLOCK OUT GENERATOR
@@ -1260,7 +1351,11 @@ def main():
             raise
 
     if args.push_mcg and (not args.run_10min):
-        push_pending_to_mcg_clocking_tbl(config, int(args.push_limit), dry_run=DRY_RUN)
+        push_pending_to_mcg_clocking_tbl(
+            config, int(args.push_limit), dry_run=DRY_RUN,
+            start_date=args.push_start_date, end_date=args.push_end_date,
+            staff_no=args.push_staff_no, repush=bool(args.repush)
+        )
         return
 
     if args.incremental:
@@ -1445,7 +1540,7 @@ def main():
     print(f"Invalid transactions (Outside Range/Mid Scans, etc.): {invalid_transactions}")
 
     output_filename = None
-    if not args.incremental:
+    if not args.incremental and not args.no_report:
         staff_prefix = f'{staff_no}_' if staff_no else ''
         if args.date:
             output_filename = f'attreport_{staff_prefix}{args.date}.csv'
@@ -1561,8 +1656,8 @@ def main():
     # ----------------------------------------------------------------------
     # Send Report to WhatsApp (if WAID is provided)
     # ----------------------------------------------------------------------
-    if not args.incremental and output_filename:
-        send_media_group(WAID, WHATSAPP_MESSAGE, output_filename, 'document', config['whatsapp_api_url'])
+    if not args.incremental and not args.no_report and output_filename:
+        send_media_group(WAID, WHATSAPP_MESSAGE, output_filename, 'document', config['whatsapp_api_url'], config)
         print("Report sent to WhatsApp group (if --waid was provided).")
 
 if __name__ == '__main__':

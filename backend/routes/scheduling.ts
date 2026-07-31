@@ -150,7 +150,7 @@ async function ensureOrangeScheduleDailyTable(): Promise<void> {
   );
 }
 
-type OrangeScheduleDailyUpsert = {
+export type OrangeScheduleDailyUpsert = {
   staffNo: string;
   shiftDate: string;
   timeIn: string | null;
@@ -162,7 +162,7 @@ type OrangeScheduleDailyUpsert = {
   sourceHash: string;
 };
 
-async function upsertOrangeScheduleDaily(rows: OrangeScheduleDailyUpsert[]): Promise<{ inserted: number; updated: number }> {
+export async function upsertOrangeScheduleDaily(rows: OrangeScheduleDailyUpsert[]): Promise<{ inserted: number; updated: number }> {
   if (rows.length === 0) return { inserted: 0, updated: 0 };
   await ensureOrangeScheduleDailyTable();
   const pool = await getPool();
@@ -222,7 +222,7 @@ async function upsertOrangeScheduleDaily(rows: OrangeScheduleDailyUpsert[]): Pro
   return { inserted: Number(row?.inserted ?? 0), updated: Number(row?.updated ?? 0) };
 }
 
-async function fetchOrangeEmployeeIds(): Promise<string[]> {
+export async function fetchOrangeEmployeeIds(): Promise<string[]> {
   const orangeSchema = process.env.ORANGE_SCHEMA && process.env.ORANGE_SCHEMA.length ? String(process.env.ORANGE_SCHEMA) : "dbo";
   const orangeEmployeeTable =
     process.env.ORANGE_EMPLOYEE_TABLE && process.env.ORANGE_EMPLOYEE_TABLE.length ? String(process.env.ORANGE_EMPLOYEE_TABLE) : "it_mti_employee_database_tbl";
@@ -234,7 +234,7 @@ async function fetchOrangeEmployeeIds(): Promise<string[]> {
   return rows.map((r: Record<string, unknown>) => String(r["employee_id"] ?? "").trim()).filter((v) => v.length > 0);
 }
 
-async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[]): Promise<OrangeDayTypeRow[]> {
+export async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[]): Promise<OrangeDayTypeRow[]> {
   if (employeeIds.length === 0) return [];
   const orangeSchema = process.env.ORANGE_PROC_SCHEMA && process.env.ORANGE_PROC_SCHEMA.length ? String(process.env.ORANGE_PROC_SCHEMA) : "dbo";
   const orangeDayTypeProc = process.env.ORANGE_DAY_TYPE_PROC && process.env.ORANGE_DAY_TYPE_PROC.length ? String(process.env.ORANGE_DAY_TYPE_PROC) : "sp_it_get_day_type";

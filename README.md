@@ -81,3 +81,39 @@ Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/c
 - MTIUsers sync tracks field-level changes in MTIUsersLastUpdate table for both Orange→MTIUsers and CardDB→MTIUsers enrichment, allowing estimation of when specific values were last updated
 - Admin Schedules includes a back-in-time lookup by Employee ID with as-of datetime, change timeline, and locked schedule history
 - Public Time Scheduling page includes historical schedule lookup by Employee ID for all users
+
+## Operations API
+
+The backend exposes protected maintenance operations for clients that cannot connect directly to Orange/RANHR. Requests require `X-Operations-Key` matching `OPERATIONS_API_KEY`, and the source IP must match `OPERATIONS_ALLOWED_IPS`.
+
+```sh
+# Compare Orange with OrangeScheduleDaily
+curl -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  "http://10.60.10.59:5000/api/operations/schedules/compare?employeeId=MTI240219&from=2026-07-23&to=2026-07-29"
+
+# Backfill selected schedules (scope=all is also supported and requires confirm=true)
+curl -X POST -H "Content-Type: application/json" -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  -d '{"employeeIds":["MTI240219"],"from":"2026-07-23","to":"2026-07-29"}' \
+  http://10.60.10.59:5000/api/operations/schedules/backfill
+
+# Rebuild attendance for one employee; replace=true requires confirm=true
+curl -X POST -H "Content-Type: application/json" -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  -d '{"employeeId":"MTI240219","from":"2026-07-23","to":"2026-07-29","replace":true,"confirm":true}' \
+  http://10.60.10.59:5000/api/operations/attendance/backfill
+
+# Preview attendance replay
+curl -X POST -H "Content-Type: application/json" -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  -d '{"employeeId":"MTI240219","from":"2026-07-23","to":"2026-07-29","repush":true}' \
+  http://10.60.10.59:5000/api/operations/attendance/push/preview
+
+# Replay; repush=true or scope=all requires confirm=true
+curl -X POST -H "Content-Type: application/json" -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  -d '{"employeeId":"MTI240219","from":"2026-07-23","to":"2026-07-29","repush":true,"confirm":true,"limit":5000}' \
+  http://10.60.10.59:5000/api/operations/attendance/push
+
+# Poll an asynchronous mutation job
+curl -H "X-Operations-Key: $OPERATIONS_API_KEY" \
+  http://10.60.10.59:5000/api/operations/jobs/JOB_ID
+```
+
+Only one mutation job runs at a time. Schedule ranges are limited to 120 days, attendance ranges to 31 days, and replay batches to 50,000 rows. The API never accepts shell commands or script paths.

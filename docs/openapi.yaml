@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: Time Keeper Pro Operations API
+  version: 1.0.0
+  description: Protected recovery operations. Legacy application routes are outside this initial contract.
+servers:
+  - url: http://10.60.10.59:5000
+security:
+  - OperationsKey: []
+components:
+  securitySchemes:
+    OperationsKey:
+      type: apiKey
+      in: header
+      name: X-Operations-Key
+  schemas:
+    Job:
+      type: object
+      required: [id, type, status, params, progress, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        params: { type: object, additionalProperties: true }
+        progress: { type: object, additionalProperties: true }
+        result: { type: object, nullable: true, additionalProperties: true }
+        error: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    Range:
+      type: object
+      required: [from, to]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        employeeId: { type: string }
+        employeeIds: { type: array, items: { type: string }, maxItems: 5000 }
+        scope: { type: string, enum: [all] }
+        confirm: { type: boolean, default: false }
+paths:
+  /api/operations/jobs/{id}:
+    get:
+      summary: Get an operations job
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Job, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '401': { description: Invalid API key }
+        '403': { description: Source IP not allowed }
+        '404': { description: Job not found }
+  /api/operations/schedules/compare:
+    get:
+      summary: Compare Orange schedule with local daily cache
+      parameters:
+        - { in: query, name: employeeId, required: true, schema: { type: string } }
+        - { in: query, name: from, required: true, schema: { type: string, format: date } }
+        - { in: query, name: to, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Per-date comparison }
+        '400': { description: Invalid parameters }
+  /api/operations/schedules/backfill:
+    post:
+      summary: Queue schedule backfill
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Range' }
+      responses:
+        '202': { description: Queued job, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '400': { description: Invalid parameters or confirmation missing }
+        '409': { description: Another mutation is active }
+  /api/operations/attendance/backfill:
+    post:
+      summary: Queue attendance rebuild from DataDBEnt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/Range' }
+                - type: object
+                  properties:
+                    replace: { type: boolean, default: false }
+      responses:
+        '202': { description: Queued job, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '400': { description: Invalid parameters or confirmation missing }
+        '409': { description: Another mutation is active }
+  /api/operations/attendance/push/preview:
+    post:
+      summary: Preview attendance forwarding candidates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/Range' }
+                - type: object
+                  properties:
+                    repush: { type: boolean, default: false }
+      responses:
+        '200': { description: Candidate counts and boundaries }
+        '400': { description: Invalid parameters }
+  /api/operations/attendance/push:
+    post:
+      summary: Queue filtered attendance forwarding or replay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/Range' }
+                - type: object
+                  properties:
+                    repush: { type: boolean, default: false }
+                    limit: { type: integer, minimum: 1, maximum: 50000, default: 5000 }
+      responses:
+        '202': { description: Queued job, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
+        '400': { description: Invalid parameters or confirmation missing }
+        '409': { description: Another mutation is active }
