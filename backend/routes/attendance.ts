@@ -31,6 +31,34 @@ const CONTRACTOR_COMPANY_PATTERNS = CONTRACTOR_COMPANIES.map((c) => c.like);
 const CONTRACTOR_DEFAULT_WINDOW_DAYS = 7;
 const CONTRACTOR_QUERY_TIMEOUT_MS = 60000;
 
+function toMinutes(hhmm: string): number {
+  const parts = hhmm.split(":");
+  return Number(parts[0] || 0) * 60 + Number(parts[1] || 0);
+}
+
+/**
+ * Shared by /report and /contractors so both tabs grade attendance the same
+ * way. Thresholds are read per call rather than captured at module load, so a
+ * changed STATUS_* value applies without a restart.
+ */
+function computeAttendanceStatus(scheduled: string, actual: string, isClockIn: boolean): string {
+  if (!scheduled) return "";
+  if (!actual) return "Missing";
+  const early = Number(process.env.STATUS_EARLY_MINUTES || 10);
+  const onTime = Number(process.env.STATUS_ONTIME_MINUTES || 5);
+  const diff = isClockIn
+    ? toMinutes(scheduled) - toMinutes(actual)
+    : toMinutes(actual) - toMinutes(scheduled);
+  if (isClockIn) {
+    if (diff > early) return "Early";
+    if (diff >= -onTime) return "On Time";
+    return "Late";
+  }
+  if (diff < -early) return "Early";
+  if (diff <= onTime) return "On Time";
+  return "Late";
+}
+
 // Mirrors the SQL LIKE patterns above so the same rows match in both places.
 const CONTRACTOR_COMPANY_MATCHERS = CONTRACTOR_COMPANIES.map((c) => ({
   name: c.name,
@@ -245,6 +273,10 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
         const last = sorted[sorted.length - 1];
         const hasOut = sorted.length > 1;
         const sched = scheduleMap.get(`${g.employee_id}|${g.date}`);
+        const scheduledIn = sched?.scheduledIn ?? "";
+        const scheduledOut = sched?.scheduledOut ?? "";
+        const actualIn = formatTime(first.time);
+        const actualOut = hasOut ? formatTime(last.time) : "";
         return {
           employee_id: g.employee_id,
           employee_name: g.employee_name,
@@ -253,17 +285,20 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
           position: g.position,
           date: g.date,
           schedule_label: sched?.label ?? "",
-          scheduled_in: sched?.scheduledIn ?? "",
-          scheduled_out: sched?.scheduledOut ?? "",
+          scheduled_in: scheduledIn,
+          scheduled_out: scheduledOut,
           // tblTransaction stores local wall-clock time and the driver reads
           // it back as UTC, so formatTime (UTC getters) yields the wall-clock
           // value. Shifting to WITA here would double-count the offset.
-          actual_in: formatTime(first.time),
-          actual_out: hasOut ? formatTime(last.time) : "",
+          actual_in: actualIn,
+          actual_out: actualOut,
           controller_in: first.controller,
           controller_out: hasOut ? last.controller : "",
-          status_in: "",
-          status_out: "",
+          // Blank whenever no schedule is cached — most contractors are still
+          // unregistered in RanHR, and grading a scan against nothing would
+          // invent a verdict.
+          status_in: computeAttendanceStatus(scheduledIn, actualIn, true),
+          status_out: computeAttendanceStatus(scheduledOut, actualOut, false),
         };
       })
       .sort((a, b) => (a.date === b.date ? a.employee_id.localeCompare(b.employee_id) : b.date < a.date ? -1 : 1));
@@ -416,34 +451,7 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
 
     
 
-    const earlyThreshold = Number(process.env.STATUS_EARLY_MINUTES || 10);
-    const onTimeThreshold = Number(process.env.STATUS_ONTIME_MINUTES || 5);
-    const lateThreshold = Number(process.env.STATUS_LATE_MINUTES || 15);
-
-    function toMin(s: string): number {
-      const parts = s.split(":");
-      const h = Number(parts[0] || 0);
-      const m = Number(parts[1] || 0);
-      return h * 60 + m;
-    }
-
-    function computeStatus(sched: string, actual: string, isIn: boolean): string {
-      if (!sched) return "";
-      if (!actual) return "Missing";
-      const sm = toMin(sched);
-      const am = toMin(actual);
-      const diff = isIn ? sm - am : am - sm;
-      if (isIn) {
-        if (diff > earlyThreshold) return "Early";
-        if (diff >= -onTimeThreshold) return "On Time";
-        if (diff >= -lateThreshold) return "Late";
-        return "Late";
-      } else {
-        if (diff < -earlyThreshold) return "Early";
-        if (diff <= onTimeThreshold) return "On Time";
-        return "Late";
-      }
-    }
+    const computeStatus = computeAttendanceStatus;
 
     function appendSourceIssue(existing: string, issue: string): string {
       const nextIssue = issue.trim();
