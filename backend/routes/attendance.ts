@@ -46,8 +46,11 @@ function canonicalCompany(raw: string): string {
 attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
   try {
     const queryParams = req.query as Record<string, unknown>;
-    const from = typeof queryParams.from === "string" ? queryParams.from : "";
-    const to = typeof queryParams.to === "string" ? queryParams.to : "";
+    const fromParam = typeof queryParams.from === "string" ? queryParams.from : "";
+    const toParam = typeof queryParams.to === "string" ? queryParams.to : "";
+    // Mirrors /report: a single picked date means that one day, not an open range.
+    const from = fromParam || toParam;
+    const to = toParam || fromParam;
     const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
     const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
     // Caps raw scans read, not grouped rows: a wide range aggregates many
@@ -288,8 +291,13 @@ attendanceRouter.get("/report", async (req: Request, res: Response) => {
     const pool = await getPool();
     const cols = await getTableColumns(pool, "tblAttendanceReport");
     const queryParams = req.query as Record<string, unknown>;
-    const from = typeof queryParams.from === "string" ? queryParams.from : "";
-    const to = typeof queryParams.to === "string" ? queryParams.to : "";
+    const fromParam = typeof queryParams.from === "string" ? queryParams.from : "";
+    const toParam = typeof queryParams.to === "string" ? queryParams.to : "";
+    // The range picker sends the first click as `from` with no `to` yet. Only
+    // filtering when both are present dropped the filter entirely, so a single
+    // picked date returned unrelated days. Treat one bound as that single day.
+    const from = fromParam || toParam;
+    const to = toParam || fromParam;
     const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
     const employeeId = typeof queryParams.employeeId === "string" ? queryParams.employeeId : "";
     const department = typeof queryParams.department === "string" ? queryParams.department : "";

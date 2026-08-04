@@ -1,6 +1,21 @@
 import { buildApiUrl } from "@/lib/config/api";
 export type AttendanceReportRow = Record<string, unknown>;
 
+/**
+ * The backend explains why a request was rejected (e.g. "Date range too large
+ * (max 31 days)"). Surfacing only the status code left the user with no way to
+ * tell what to change, so prefer the server's message when there is one.
+ */
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) return body.error.trim();
+  } catch {
+    // Body was not JSON; fall back to the generic message below.
+  }
+  return `${fallback}: ${res.status}`;
+}
+
 export interface AttendanceQuery {
   from?: string;
   to?: string;
@@ -23,7 +38,7 @@ export async function fetchAttendanceReport(params?: AttendanceQuery): Promise<A
   const url = buildApiUrl("attendance/report", qs);
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) {
-    throw new Error(`Failed to fetch attendance report: ${res.status}`);
+    throw new Error(await readErrorMessage(res, "Failed to fetch attendance report"));
   }
   const json = (await res.json()) as { data: AttendanceReportRow[] };
   return json.data;
@@ -45,7 +60,7 @@ export async function fetchContractorAttendance(params?: ContractorAttendanceQue
   const url = buildApiUrl("attendance/contractors", qs);
   const res = await fetch(url, { headers: { Accept: "application/json" } });
   if (!res.ok) {
-    throw new Error(`Failed to fetch contractor attendance: ${res.status}`);
+    throw new Error(await readErrorMessage(res, "Failed to fetch contractor attendance"));
   }
   const json = (await res.json()) as { data: AttendanceReportRow[] };
   return json.data;
