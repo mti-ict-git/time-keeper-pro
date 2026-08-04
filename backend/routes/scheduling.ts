@@ -198,7 +198,19 @@ export async function upsertOrangeScheduleDaily(rows: OrangeScheduleDailyUpsert[
     MERGE dbo.OrangeScheduleDaily AS t
     USING src AS s
       ON t.StaffNo = s.staffNo AND t.ShiftDate = s.shiftDate
-    WHEN MATCHED THEN
+    WHEN MATCHED
+      -- Orange returning nothing at all (no day type, no description, no times)
+      -- means "not found", which a transient outage also produces. Refuse to
+      -- overwrite a schedule we already hold with that empty result; a real
+      -- OFF day still carries a DayType, so it updates normally.
+      AND NOT (
+        NULLIF(s.dayType, '') IS NULL
+        AND NULLIF(s.description, '') IS NULL
+        AND s.timeIn IS NULL
+        AND s.timeOut IS NULL
+        AND (t.TimeIn IS NOT NULL OR t.TimeOut IS NOT NULL OR t.DayType IS NOT NULL)
+      )
+    THEN
       UPDATE SET
         TimeIn = s.timeIn,
         TimeOut = s.timeOut,
