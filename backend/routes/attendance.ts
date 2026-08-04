@@ -5,10 +5,219 @@ import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { getPool } from "../db";
+import { getDataDbPool } from "../dataDb";
 import { getTableColumns } from "../utils/introspection";
 import { formatTime, formatDate, toBoolNextDay } from "../utils/format";
 
 export const attendanceRouter = Router();
+
+// Non-MTI contractor companies to surface read-only on /attendance.
+// This never writes to tblAttendanceReport, so it can never reach the
+// RanHR/MCG push (which only reads tblAttendanceReport rows with StaffNo LIKE 'MTI%').
+const CONTRACTOR_COMPANY_PATTERNS = [
+  "%Cahaya Berkah Morowali%",
+  "%Triatra%",
+  "%Agi Perkasa Konstruksi%",
+  "%Dale Esa Gardatama%",
+  "%Global Arrow%",
+  "%Hajampo Asia Mineral%",
+  "%Widya Ind%Multiteknik%",
+];
+const CONTRACTOR_DEFAULT_WINDOW_DAYS = 7;
+const CONTRACTOR_QUERY_TIMEOUT_MS = 60000;
+
+attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
+  try {
+    const queryParams = req.query as Record<string, unknown>;
+    const from = typeof queryParams.from === "string" ? queryParams.from : "";
+    const to = typeof queryParams.to === "string" ? queryParams.to : "";
+    const search = typeof queryParams.search === "string" ? queryParams.search.trim() : "";
+    const limitParam = typeof queryParams.limit === "string" ? Number(queryParams.limit) : undefined;
+    // Caps raw scans read, not grouped rows: a wide range aggregates many
+    // scans into far fewer rows, so this has to stay well above the row count
+    // the table shows or the oldest days in the range get silently dropped.
+    const maxLimit = 20000;
+    const limit =
+      Number.isFinite(limitParam || NaN) && (limitParam as number) > 0
+        ? Math.min(Math.floor(limitParam as number), maxLimit)
+        : 5000;
+
+    if (from && to) {
+      const fromDate = new Date(`${from}T00:00:00Z`);
+      const toDate = new Date(`${to}T00:00:00Z`);
+      const diffDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+      if (!Number.isFinite(diffDays) || diffDays < 0) {
+        res.status(400).json({ error: "Invalid date range" });
+        return;
+      }
+      if (diffDays > 31) {
+        res.status(400).json({ error: "Date range too large (max 31 days)" });
+        return;
+      }
+    }
+
+    const pool = await getDataDbPool();
+
+    // Step 1: resolve the contractor cards from CardDB alone. Joining CardDB
+    // to the 4M-row tblTransaction with leading-wildcard Company LIKEs makes
+    // the optimizer scan the whole table and blows past the request timeout,
+    // so the card set is resolved first and used as a sargable filter below.
+    const cardReq = pool.request();
+    cardReq.requestTimeout = CONTRACTOR_QUERY_TIMEOUT_MS;
+    const companyParts = CONTRACTOR_COMPANY_PATTERNS.map((pattern, i) => {
+      cardReq.input(`company${i}`, sql.NVarChar, pattern);
+      return `Company LIKE @company${i}`;
+    });
+    const cardConditions = [
+      "ISNULL(Del_State, 0) = 0",
+      "CardNo IS NOT NULL AND CardNo <> ''",
+      `(${companyParts.join(" OR ")})`,
+    ];
+    if (search) {
+      cardReq.input("searchLike", sql.NVarChar, `%${search}%`);
+      cardConditions.push("(Name LIKE @searchLike OR StaffNo LIKE @searchLike OR Company LIKE @searchLike)");
+    }
+    const cardRes = await cardReq.query(`
+      SELECT CardNo, Name, Title, Position, Department, Company, StaffNo
+      FROM dbo.CardDB
+      WHERE ${cardConditions.join(" AND ")}
+    `);
+    const cardRows = (cardRes.recordset ?? []) as unknown as Array<{
+      CardNo: string | null;
+      Name: string | null;
+      Title: string | null;
+      Position: string | null;
+      Department: string | null;
+      Company: string | null;
+      StaffNo: string | null;
+    }>;
+
+    const cardMap = new Map<string, (typeof cardRows)[number]>();
+    for (const c of cardRows) {
+      const cardNo = String(c.CardNo ?? "").trim();
+      // Card numbers are DB-internal identifiers; anything outside this
+      // charset is not safe to inline below, so it is skipped.
+      if (cardNo && /^[A-Za-z0-9]+$/.test(cardNo)) cardMap.set(cardNo, c);
+    }
+    if (cardMap.size === 0) {
+      res.json({ data: [] });
+      return;
+    }
+
+    // Step 2: tblTransaction has no index on TrDateTime or CardNo, but it does
+    // have one keyed on TrDate ('YYYY/MM/DD'), so the window is always bounded
+    // on that column. Without an explicit range, fall back to a recent window
+    // instead of scanning the full history.
+    function toTrDate(ymd: string): string {
+      return ymd.replace(/-/g, "/");
+    }
+    function shiftDays(ymd: string, days: number): string {
+      const d = new Date(`${ymd}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + days);
+      return d.toISOString().slice(0, 10);
+    }
+    const today = formatDate(new Date());
+    const rangeTo = to || today;
+    const rangeFrom = from || shiftDays(rangeTo, -CONTRACTOR_DEFAULT_WINDOW_DAYS);
+
+    const txReq = pool.request();
+    txReq.requestTimeout = CONTRACTOR_QUERY_TIMEOUT_MS;
+    txReq.input("from", sql.VarChar, toTrDate(rangeFrom));
+    txReq.input("to", sql.VarChar, toTrDate(rangeTo));
+    const cardList = Array.from(cardMap.keys())
+      .map((c) => `'${c}'`)
+      .join(",");
+    const txRes = await txReq.query(`
+      SELECT TOP (${limit}) CardNo, TrDateTime, TrDate, TrController
+      FROM dbo.tblTransaction
+      WHERE [Transaction] = 'Valid Entry Access'
+        AND TrDate BETWEEN @from AND @to
+        AND CardNo IN (${cardList})
+      ORDER BY TrDateTime DESC
+    `);
+    const txRows = (txRes.recordset ?? []) as unknown as Array<{
+      CardNo: string | null;
+      TrDateTime: Date;
+      TrDate: string | null;
+      TrController: string | null;
+    }>;
+
+    // Step 3: group scans into one row per employee per day and emit the same
+    // field names as /report, so the attendance table renders contractors
+    // through the exact same columns. schedule_label/scheduled_* and status_*
+    // stay empty: contractors have no MTIUsers schedule to compare against,
+    // so the table shows them as N/A rather than inventing one.
+    const grouped = new Map<
+      string,
+      {
+        employee_id: string;
+        employee_name: string;
+        company: string;
+        department: string;
+        position: string;
+        date: string;
+        scans: Array<{ time: Date; controller: string }>;
+      }
+    >();
+
+    for (const t of txRows) {
+      const cardNo = String(t.CardNo ?? "").trim();
+      const card = cardMap.get(cardNo);
+      if (!card || !(t.TrDateTime instanceof Date)) continue;
+      const staffNo = String(card.StaffNo ?? "").trim();
+      if (!staffNo) continue;
+      // TrDate is the transaction's own local calendar day; use it directly
+      // rather than re-deriving one from TrDateTime.
+      const date = String(t.TrDate ?? "").trim().replace(/\//g, "-") || formatDate(t.TrDateTime);
+      const key = `${staffNo}|${date}`;
+      const entry = grouped.get(key) ?? {
+        employee_id: staffNo,
+        employee_name: String(card.Name ?? "").trim(),
+        company: String(card.Company ?? "").trim(),
+        department: String(card.Department ?? "").trim(),
+        position: String(card.Position ?? card.Title ?? "").trim(),
+        date,
+        scans: [],
+      };
+      entry.scans.push({ time: t.TrDateTime, controller: String(t.TrController ?? "").trim() });
+      grouped.set(key, entry);
+    }
+
+    const data = Array.from(grouped.values())
+      .map((g) => {
+        const sorted = g.scans.slice().sort((a, b) => a.time.getTime() - b.time.getTime());
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        const hasOut = sorted.length > 1;
+        return {
+          employee_id: g.employee_id,
+          employee_name: g.employee_name,
+          company: g.company,
+          department: g.department,
+          position: g.position,
+          date: g.date,
+          schedule_label: "",
+          scheduled_in: "",
+          scheduled_out: "",
+          // tblTransaction stores local wall-clock time and the driver reads
+          // it back as UTC, so formatTime (UTC getters) yields the wall-clock
+          // value. Shifting to WITA here would double-count the offset.
+          actual_in: formatTime(first.time),
+          actual_out: hasOut ? formatTime(last.time) : "",
+          controller_in: first.controller,
+          controller_out: hasOut ? last.controller : "",
+          status_in: "",
+          status_out: "",
+        };
+      })
+      .sort((a, b) => (a.date === b.date ? a.employee_id.localeCompare(b.employee_id) : b.date < a.date ? -1 : 1));
+
+    res.json({ data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
 
 attendanceRouter.get("/report/schema", async (_req: Request, res: Response) => {
   try {

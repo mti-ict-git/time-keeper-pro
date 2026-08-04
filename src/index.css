@@ -67,6 +67,7 @@
     --status-missing: 215 16% 47%;
     --status-valid: 142 76% 36%;
     --status-invalid: 0 84% 60%;
+    --status-na: 330 81% 50%;
   }
 
   .dark {
@@ -106,6 +107,9 @@
     --sidebar-accent-foreground: 210 40% 96%;
     --sidebar-border: 219 27% 14%;
     --sidebar-ring: 213 65% 54%;
+
+    /* Lifted so the pink stays legible on the dark surface */
+    --status-na: 330 81% 62%;
   }
 }
 

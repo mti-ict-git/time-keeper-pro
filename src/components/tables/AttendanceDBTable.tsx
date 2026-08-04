@@ -37,7 +37,7 @@ import {
   FileSpreadsheet,
   FileType,
 } from "lucide-react";
-import { AttendanceReportRow, fetchAttendanceReport } from "@/lib/services/attendanceApi";
+import { AttendanceReportRow, fetchAttendanceReport, fetchContractorAttendance } from "@/lib/services/attendanceApi";
 import { Badge } from "@/components/ui/badge";
 import { ScheduleBadge } from "@/components/ScheduleBadge";
 import { format as formatDate } from "date-fns";
@@ -64,7 +64,17 @@ function toDateValue(value: string): Date | undefined {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-export const AttendanceDBTable = () => {
+export interface AttendanceDBTableProps {
+  /**
+   * "mti" reads tblAttendanceReport. "contractors" reads the read-only
+   * CardDB view of the non-MTI contractor companies, which returns the same
+   * row shape so every column, badge, and export below stays identical.
+   */
+  source?: "mti" | "contractors";
+}
+
+export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) => {
+  const isContractors = source === "contractors";
   const [data, setData] = useState<AttendanceReportRow[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
@@ -73,6 +83,7 @@ export const AttendanceDBTable = () => {
   const [globalFilter, setGlobalFilter] = useState<string>("");
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [employeeGroupFilter, setEmployeeGroupFilter] = useState<"indonesia" | "expatriate" | "all">("indonesia");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -86,6 +97,12 @@ export const AttendanceDBTable = () => {
     return () => clearTimeout(handle);
   }, [globalFilter]);
 
+  // Department/employee-group are server-side filters for the MTI report only.
+  // The contractor view filters those client-side, so they stay undefined here
+  // and changing them does not trigger a refetch.
+  const apiDepartment = !isContractors && departmentFilter !== "all" ? departmentFilter : undefined;
+  const apiEmployeeGroup = isContractors ? undefined : employeeGroupFilter;
+
   useEffect(() => {
     const q = debouncedSearch.trim();
     const staffPattern = /^MTI(?:BJ)?\d+$/i;
@@ -94,21 +111,30 @@ export const AttendanceDBTable = () => {
     const hasDateRange = Boolean(dateFrom && dateTo);
     const requestLimit = hasDateRange ? 15000 : (searchParam || employeeIdParam ? 2000 : 2000);
     setLoading(true);
-    fetchAttendanceReport({
-      from: dateFrom || undefined,
-      to: dateTo || undefined,
-      search: searchParam,
-      employeeId: employeeIdParam,
-      department: departmentFilter !== "all" ? departmentFilter : undefined,
-      employeeGroup: employeeGroupFilter,
-      limit: requestLimit,
-    })
+    const request = isContractors
+      ? fetchContractorAttendance({
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
+          search: q.length >= 3 ? q : undefined,
+          limit: hasDateRange ? 20000 : 5000,
+        })
+      : fetchAttendanceReport({
+          from: dateFrom || undefined,
+          to: dateTo || undefined,
+          search: searchParam,
+          employeeId: employeeIdParam,
+          department: apiDepartment,
+          employeeGroup: apiEmployeeGroup,
+          limit: requestLimit,
+        });
+    request
       .then((rows) => setData(rows))
       .catch((e) => setError(e instanceof Error ? e.message : "Unknown error"))
       .finally(() => setLoading(false));
-  }, [dateFrom, dateTo, debouncedSearch, departmentFilter, employeeGroupFilter]);
+  }, [dateFrom, dateTo, debouncedSearch, apiDepartment, apiEmployeeGroup, isContractors]);
 
   const departments = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["department", "dept"])))).filter(Boolean).sort(), [data]);
+  const companies = useMemo(() => Array.from(new Set(data.map((r) => pick(r, ["company", "Company"])))).filter(Boolean).sort(), [data]);
 
   const filteredData = useMemo(() => {
     function getValue(colId: string, r: AttendanceReportRow): string {
@@ -146,6 +172,7 @@ export const AttendanceDBTable = () => {
       const department = pick(row, ["department", "dept"]);
       const matchesDepartment = departmentFilter === "all" || department === departmentFilter;
       if (!matchesDepartment) return false;
+      if (companyFilter !== "all" && pick(row, ["company", "Company"]) !== companyFilter) return false;
       const entries = Object.entries(columnFilters).filter(([_, v]) => v && v.trim().length);
       for (const [colId, val] of entries) {
         const cell = getValue(colId, row);
@@ -153,7 +180,7 @@ export const AttendanceDBTable = () => {
       }
       return true;
     });
-  }, [data, departmentFilter, columnFilters]);
+  }, [data, departmentFilter, companyFilter, columnFilters]);
 
   const optionsMap = useMemo(() => {
     const setFor = (key: string): Set<string> => new Set<string>();
@@ -509,7 +536,8 @@ export const AttendanceDBTable = () => {
           if (v.includes("late")) return "bg-destructive/10 text-destructive";
           if (v.includes("early")) return "bg-success/10 text-success";
           if (v.includes("on time") || v.includes("ontime")) return "bg-info/10 text-info";
-          return "bg-muted/50";
+          // Empty status renders as N/A — no schedule to compare against.
+          return "bg-status-na/10 text-status-na border-status-na/20";
         };
         return (
           <div className="space-y-1">
@@ -578,9 +606,10 @@ export const AttendanceDBTable = () => {
   }, [dateFrom, dateTo]);
 
   const exportRows = table.getSortedRowModel().rows.map((row) => row.original);
+  const exportFilename = isContractors ? "contractor_attendance_report" : "attendance_report";
 
   const handleExportCSV = (): void => {
-    exportToCSV(exportRows, "attendance_report");
+    exportToCSV(exportRows, exportFilename);
     toast({
       title: "Export Successful",
       description: `Exported ${exportRows.length} attendance row(s) to CSV`,
@@ -588,7 +617,7 @@ export const AttendanceDBTable = () => {
   };
 
   const handleExportPDF = (): void => {
-    exportToPDF(exportRows, "attendance_report");
+    exportToPDF(exportRows, exportFilename);
     toast({
       title: "Export Successful",
       description: `Exported ${exportRows.length} attendance row(s) to PDF`,
@@ -596,7 +625,7 @@ export const AttendanceDBTable = () => {
   };
 
   const handleExportXLSX = (): void => {
-    exportToXLSX(exportRows, "attendance_report");
+    exportToXLSX(exportRows, exportFilename);
     toast({
       title: "Export Successful",
       description: `Exported ${exportRows.length} attendance row(s) to Excel`,
@@ -683,16 +712,30 @@ export const AttendanceDBTable = () => {
             </Popover>
           </div>
 
-          <Select value={employeeGroupFilter} onValueChange={(value) => setEmployeeGroupFilter(value as "indonesia" | "expatriate" | "all")}>
-            <SelectTrigger className="w-[170px]">
-              <SelectValue placeholder="Employee Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="indonesia">Indonesia</SelectItem>
-              <SelectItem value="expatriate">Expatriate</SelectItem>
-              <SelectItem value="all">All Employees</SelectItem>
-            </SelectContent>
-          </Select>
+          {isContractors ? (
+            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="All Companies" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Companies</SelectItem>
+                {companies.map((company) => (
+                  <SelectItem key={company} value={company}>{company}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Select value={employeeGroupFilter} onValueChange={(value) => setEmployeeGroupFilter(value as "indonesia" | "expatriate" | "all")}>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="Employee Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="indonesia">Indonesia</SelectItem>
+                <SelectItem value="expatriate">Expatriate</SelectItem>
+                <SelectItem value="all">All Employees</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
           <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
             <SelectTrigger className="w-[180px]">

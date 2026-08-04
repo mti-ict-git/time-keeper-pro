@@ -28,3 +28,25 @@ export async function fetchAttendanceReport(params?: AttendanceQuery): Promise<A
   const json = (await res.json()) as { data: AttendanceReportRow[] };
   return json.data;
 }
+
+export interface ContractorAttendanceQuery {
+  from?: string;
+  to?: string;
+  search?: string;
+  limit?: number;
+}
+
+export async function fetchContractorAttendance(params?: ContractorAttendanceQuery): Promise<AttendanceReportRow[]> {
+  const qs = new URLSearchParams();
+  if (params?.from) qs.set("from", params.from);
+  if (params?.to) qs.set("to", params.to);
+  if (params?.search) qs.set("search", params.search);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const url = buildApiUrl("attendance/contractors", qs);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch contractor attendance: ${res.status}`);
+  }
+  const json = (await res.json()) as { data: AttendanceReportRow[] };
+  return json.data;
+}

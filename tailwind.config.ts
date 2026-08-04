@@ -70,6 +70,7 @@ export default {
           missing: "hsl(var(--status-missing))",
           valid: "hsl(var(--status-valid))",
           invalid: "hsl(var(--status-invalid))",
+          na: "hsl(var(--status-na))",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

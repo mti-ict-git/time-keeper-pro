@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { AttendanceDBTable } from '@/components/tables/AttendanceDBTable';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowRight,
   Calendar,
@@ -149,7 +150,18 @@ const AttendanceRecords = () => {
               </div>
             </div>
           </div>
-          <AttendanceDBTable />
+          <Tabs defaultValue="mti" className="w-full">
+            <TabsList>
+              <TabsTrigger value="mti">MTI</TabsTrigger>
+              <TabsTrigger value="contractors">Kontraktor</TabsTrigger>
+            </TabsList>
+            <TabsContent value="mti">
+              <AttendanceDBTable />
+            </TabsContent>
+            <TabsContent value="contractors">
+              <AttendanceDBTable source="contractors" />
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>
