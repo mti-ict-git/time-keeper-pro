@@ -141,6 +141,7 @@ export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) =>
       const map: Record<string, string[]> = {
         employeeId: ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"],
         employeeName: ["employee_name", "name"],
+        company: ["company", "Company"],
         department: ["department", "dept"],
         position: ["position_title", "position", "Title"],
         date: ["date", "attendance_date", "record_date"],
@@ -187,6 +188,7 @@ export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) =>
     const opts: Record<string, Set<string>> = {
       employeeId: setFor("employeeId"),
       employeeName: setFor("employeeName"),
+      company: setFor("company"),
       department: setFor("department"),
       position: setFor("position"),
       date: setFor("date"),
@@ -205,6 +207,7 @@ export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) =>
     for (const r of data) {
       add("employeeId", pick(r, ["employee_id", "employeeid", "StaffNo", "EmpID", "emp_id", "empid"]));
       add("employeeName", pick(r, ["employee_name", "name"]));
+      add("company", pick(r, ["company", "Company"]));
       add("department", pick(r, ["department", "dept"]));
       add("position", pick(r, ["position_title", "position", "Title"]));
       add("date", pick(r, ["date", "attendance_date", "record_date"]));
@@ -226,6 +229,7 @@ export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) =>
     return {
       employeeId: toSorted(opts.employeeId),
       employeeName: toSorted(opts.employeeName),
+      company: toSorted(opts.company),
       department: toSorted(opts.department),
       position: toSorted(opts.position),
       date: toSorted(opts.date),
@@ -296,6 +300,35 @@ export const AttendanceDBTable = ({ source = "mti" }: AttendanceDBTableProps) =>
       ),
       cell: ({ row }) => <span className="text-sm font-medium break-words whitespace-normal">{pick(row.original, ["employee_name", "name"]) || "—"}</span>,
     },
+    // Contractors span several companies, so the column only earns its width
+    // there; MTI rows are all one company and carry no Company field.
+    ...(isContractors
+      ? ([
+          {
+            id: "company",
+            header: () => (
+              <div className="relative flex items-center gap-2">
+                <span>Company</span>
+                <Button variant="outline" size="icon" className="h-6 w-6" onClick={() => setOpenFilterId(openFilterId === "company" ? null : "company")}>
+                  <Filter className="h-3 w-3" />
+                </Button>
+                {openFilterId === "company" && (
+                  <div className="absolute z-10 top-6 left-0 p-2 rounded-md border bg-popover shadow-md w-64">
+                    <Input value={filterSearch} onChange={(e) => setFilterSearch(e.target.value)} placeholder="Search Company" />
+                    <div className="mt-2 max-h-48 overflow-auto">
+                      <button className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, company: "" })); setOpenFilterId(null); }}>All</button>
+                      {(optionsMap["company"] || []).filter((o) => o.toLowerCase().includes(filterSearch.toLowerCase())).map((o) => (
+                        <button key={o} className="w-full text-left px-2 py-1 rounded hover:bg-muted" onClick={() => { setColumnFilters((p) => ({ ...p, company: o })); setOpenFilterId(null); }}>{o}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ),
+            cell: ({ row }) => <span className="text-xs break-words whitespace-normal">{pick(row.original, ["company", "Company"]) || "—"}</span>,
+          },
+        ] as ColumnDef<AttendanceReportRow>[])
+      : []),
     { id: "department", header: ({ column }) => (
       <div className="relative flex items-center gap-2">
         <span>Department</span>

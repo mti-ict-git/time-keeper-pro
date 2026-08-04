@@ -10,6 +10,7 @@ type AttendanceExportSource = ProcessedAttendanceRecord | Record<string, unknown
 type AttendanceExportRow = {
   employeeId: string;
   employeeName: string;
+  company: string;
   department: string;
   position: string;
   date: string;
@@ -51,6 +52,12 @@ function formatDateValue(value: unknown): string {
   return format(parsed, 'yyyy-MM-dd');
 }
 
+// Only contractor rows carry a company, so the column is added just for them
+// and MTI exports keep their existing shape.
+function hasCompanyColumn(rows: AttendanceExportRow[]): boolean {
+  return rows.some((r) => r.company !== '');
+}
+
 function normalizeAttendanceExportRows(records: AttendanceExportSource[]): AttendanceExportRow[] {
   return records.map((record) => {
     const controllerIn = pickRecordValue(record, ['controller_in']);
@@ -69,6 +76,7 @@ function normalizeAttendanceExportRows(records: AttendanceExportSource[]): Atten
     return {
       employeeId: pickRecordValue(record, ['employee_id', 'employeeId', 'employeeid', 'StaffNo', 'EmpID', 'emp_id', 'empid']),
       employeeName: pickRecordValue(record, ['employee_name', 'employeeName', 'name']),
+      company: pickRecordValue(record, ['company', 'Company']),
       department: pickRecordValue(record, ['department', 'dept']),
       position: pickRecordValue(record, ['position_title', 'position', 'Title']),
       date: formatDateValue((record as Record<string, unknown>).date ?? (record as Record<string, unknown>).attendance_date ?? (record as Record<string, unknown>).record_date),
@@ -91,9 +99,11 @@ export const exportToCSV = (
   filename: string = 'attendance_records'
 ): void => {
   const normalized = normalizeAttendanceExportRows(records);
+  const withCompany = hasCompanyColumn(normalized);
   const headers = [
     'Employee ID',
     'Name',
+    ...(withCompany ? ['Company'] : []),
     'Department',
     'Position',
     'Date',
@@ -111,6 +121,7 @@ export const exportToCSV = (
   const rows = normalized.map((record) => [
     record.employeeId,
     record.employeeName,
+    ...(withCompany ? [record.company] : []),
     record.department,
     record.position,
     record.date,
@@ -144,9 +155,11 @@ export const exportToXLSX = (
   filename: string = 'attendance_records'
 ): void => {
   const normalized = normalizeAttendanceExportRows(records);
+  const withCompany = hasCompanyColumn(normalized);
   const data = normalized.map((record) => ({
     'Employee ID': record.employeeId,
     Name: record.employeeName,
+    ...(withCompany ? { Company: record.company } : {}),
     Department: record.department,
     Position: record.position,
     Date: record.date,
@@ -169,6 +182,7 @@ export const exportToXLSX = (
   const colWidths = [
     { wch: 14 }, // Employee ID
     { wch: 20 }, // Name
+    ...(withCompany ? [{ wch: 28 }] : []), // Company
     { wch: 15 }, // Department
     { wch: 15 }, // Position
     { wch: 12 }, // Date
@@ -250,9 +264,29 @@ export const exportToPDF = (
   doc.setFontSize(10);
   doc.text(`Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm')}`, 14, 22);
 
+  const withCompany = hasCompanyColumn(normalized);
+  // Headers and body are built from the same conditional shape; they used to
+  // drift apart (the body carried Employee ID but the header row did not),
+  // which shifted every column label one place to the left.
+  const headers = [
+    'Employee ID',
+    'Name',
+    ...(withCompany ? ['Company'] : []),
+    'Department',
+    'Date',
+    'Schedule',
+    'Actual In',
+    'Actual Out',
+    'Controller',
+    'Status In',
+    'Status Out',
+    'Source Issue',
+  ];
+
   const tableData = normalized.map((record) => [
     record.employeeId,
     record.employeeName,
+    ...(withCompany ? [record.company] : []),
     record.department,
     record.date,
     record.schedule,
@@ -264,21 +298,11 @@ export const exportToPDF = (
     record.sourceIssue,
   ]);
 
+  const statusColumns = [headers.indexOf('Status In'), headers.indexOf('Status Out')];
+  const sourceIssueColumn = headers.indexOf('Source Issue');
+
   autoTable(doc, {
-    head: [
-      [
-        'Name',
-        'Department',
-        'Date',
-        'Schedule',
-        'Actual In',
-        'Actual Out',
-        'Controller',
-        'Status In',
-        'Status Out',
-        'Source Issue',
-      ],
-    ],
+    head: [headers],
     body: tableData,
     startY: 28,
     styles: {
@@ -296,7 +320,6 @@ export const exportToPDF = (
     didParseCell: (data) => {
       // Color status cells
       if (data.section === 'body') {
-        const statusColumns = [8, 9]; // Status In and Status Out columns
         if (statusColumns.includes(data.column.index)) {
           const value = data.cell.text[0]?.toLowerCase();
           if (value.includes('early')) {
@@ -309,7 +332,7 @@ export const exportToPDF = (
             data.cell.styles.textColor = [107, 114, 128];
           }
         }
-        if (data.column.index === 10) {
+        if (data.column.index === sourceIssueColumn) {
           const value = data.cell.text[0]?.toLowerCase();
           if (value && value !== 'n/a') {
             data.cell.styles.textColor = [220, 38, 38];
