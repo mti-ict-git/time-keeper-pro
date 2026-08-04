@@ -14,17 +14,34 @@ export const attendanceRouter = Router();
 // Non-MTI contractor companies to surface read-only on /attendance.
 // This never writes to tblAttendanceReport, so it can never reach the
 // RanHR/MCG push (which only reads tblAttendanceReport rows with StaffNo LIKE 'MTI%').
-const CONTRACTOR_COMPANY_PATTERNS = [
-  "%Cahaya Berkah Morowali%",
-  "%Triatra%",
-  "%Agi Perkasa Konstruksi%",
-  "%Dale Esa Gardatama%",
-  "%Global Arrow%",
-  "%Hajampo Asia Mineral%",
-  "%Widya Ind%Multiteknik%",
+// CardDB.Company is free text, so one company shows up under several
+// spellings ("PT Agi Perkasa Konstruksi" vs "PT. AGI PERKASA KONSTRUKSI").
+// Each pattern carries the canonical name reported to the client so those
+// variants collapse into a single company in the table and its filter.
+const CONTRACTOR_COMPANIES = [
+  { name: "PT Cahaya Berkah Morowali", like: "%Cahaya Berkah Morowali%" },
+  { name: "PT Triatra Sinergia Pratama", like: "%Triatra%" },
+  { name: "PT Agi Perkasa Konstruksi", like: "%Agi Perkasa Konstruksi%" },
+  { name: "PT Dale Esa Gardatama", like: "%Dale Esa Gardatama%" },
+  { name: "PT Global Arrow", like: "%Global Arrow%" },
+  { name: "PT Hajampo Asia Mineral", like: "%Hajampo Asia Mineral%" },
+  { name: "PT Widya Industrial Multiteknik", like: "%Widya Ind%Multiteknik%" },
 ];
+const CONTRACTOR_COMPANY_PATTERNS = CONTRACTOR_COMPANIES.map((c) => c.like);
 const CONTRACTOR_DEFAULT_WINDOW_DAYS = 7;
 const CONTRACTOR_QUERY_TIMEOUT_MS = 60000;
+
+// Mirrors the SQL LIKE patterns above so the same rows match in both places.
+const CONTRACTOR_COMPANY_MATCHERS = CONTRACTOR_COMPANIES.map((c) => ({
+  name: c.name,
+  pattern: new RegExp(`^${c.like.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*")}$`, "i"),
+}));
+
+function canonicalCompany(raw: string): string {
+  const value = raw.trim();
+  const match = CONTRACTOR_COMPANY_MATCHERS.find((m) => m.pattern.test(value));
+  return match ? match.name : value;
+}
 
 attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
   try {
@@ -173,7 +190,7 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
       const entry = grouped.get(key) ?? {
         employee_id: staffNo,
         employee_name: String(card.Name ?? "").trim(),
-        company: String(card.Company ?? "").trim(),
+        company: canonicalCompany(String(card.Company ?? "")),
         department: String(card.Department ?? "").trim(),
         position: String(card.Position ?? card.Title ?? "").trim(),
         date,
