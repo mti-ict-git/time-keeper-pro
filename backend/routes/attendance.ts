@@ -43,29 +43,6 @@ function canonicalCompany(raw: string): string {
   return match ? match.name : value;
 }
 
-// Same Early/On Time/Late rule the MTI report applies. Kept as its own
-// function rather than shared with /report so the production MTI path is
-// not disturbed; both read the same STATUS_* thresholds.
-function scheduleStatus(scheduled: string, actual: string, isClockIn: boolean): string {
-  if (!scheduled) return "";
-  if (!actual) return "Missing";
-  const early = Number(process.env.STATUS_EARLY_MINUTES || 10);
-  const onTime = Number(process.env.STATUS_ONTIME_MINUTES || 5);
-  const toMinutes = (s: string): number => {
-    const [h, m] = s.split(":");
-    return Number(h || 0) * 60 + Number(m || 0);
-  };
-  const diff = isClockIn
-    ? toMinutes(scheduled) - toMinutes(actual)
-    : toMinutes(actual) - toMinutes(scheduled);
-  if (isClockIn) {
-    if (diff > early) return "Early";
-    return diff >= -onTime ? "On Time" : "Late";
-  }
-  if (diff < -early) return "Early";
-  return diff <= onTime ? "On Time" : "Late";
-}
-
 attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
   try {
     const queryParams = req.query as Record<string, unknown>;
@@ -223,12 +200,48 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
       grouped.set(key, entry);
     }
 
+    // Step 4: pick up whatever schedule the prefetch has cached for these
+    // staff/date pairs. Contractors only resolve in Orange under their own
+    // company id, so many rows are still blank while RanHR registers them —
+    // a missing schedule is expected here, not an error.
+    const scheduleMap = new Map<string, { scheduledIn: string; scheduledOut: string; label: string }>();
+    const staffNos = Array.from(new Set(Array.from(grouped.values()).map((g) => g.employee_id)));
+    if (staffNos.length > 0) {
+      try {
+        const mtiPool = await getPool();
+        const schedReq = mtiPool.request();
+        schedReq.input("staffNos", sql.NVarChar(sql.MAX), JSON.stringify(staffNos));
+        schedReq.input("from", sql.Date, new Date(`${rangeFrom}T00:00:00Z`));
+        schedReq.input("to", sql.Date, new Date(`${rangeTo}T00:00:00Z`));
+        const schedRes = await schedReq.query(`
+          SELECT d.StaffNo, d.ShiftDate, d.TimeIn, d.TimeOut, d.DayType, d.Description
+          FROM dbo.OrangeScheduleDaily d
+          INNER JOIN OPENJSON(@staffNos) AS s ON d.StaffNo = s.value
+          WHERE d.ShiftDate BETWEEN @from AND @to
+        `);
+        for (const row of (schedRes.recordset ?? []) as Array<Record<string, unknown>>) {
+          const staffNo = String(row["StaffNo"] ?? "").trim();
+          const shiftDate = formatDate(row["ShiftDate"]);
+          if (!staffNo || !shiftDate) continue;
+          scheduleMap.set(`${staffNo}|${shiftDate}`, {
+            scheduledIn: formatTime(row["TimeIn"]),
+            scheduledOut: formatTime(row["TimeOut"]),
+            label: String(row["Description"] ?? row["DayType"] ?? ""),
+          });
+        }
+      } catch {
+        // A schedule lookup failure must not take the scan listing down.
+        scheduleMap.clear();
+      }
+    }
+
     const data = Array.from(grouped.values())
       .map((g) => {
         const sorted = g.scans.slice().sort((a, b) => a.time.getTime() - b.time.getTime());
         const first = sorted[0];
         const last = sorted[sorted.length - 1];
         const hasOut = sorted.length > 1;
+        const sched = scheduleMap.get(`${g.employee_id}|${g.date}`);
         return {
           employee_id: g.employee_id,
           employee_name: g.employee_name,
@@ -236,9 +249,9 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
           department: g.department,
           position: g.position,
           date: g.date,
-          schedule_label: "",
-          scheduled_in: "",
-          scheduled_out: "",
+          schedule_label: sched?.label ?? "",
+          scheduled_in: sched?.scheduledIn ?? "",
+          scheduled_out: sched?.scheduledOut ?? "",
           // tblTransaction stores local wall-clock time and the driver reads
           // it back as UTC, so formatTime (UTC getters) yields the wall-clock
           // value. Shifting to WITA here would double-count the offset.
@@ -251,68 +264,6 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
         };
       })
       .sort((a, b) => (a.date === b.date ? a.employee_id.localeCompare(b.employee_id) : b.date < a.date ? -1 : 1));
-
-    // Step 4: attach schedules the same way /report does — a live lookup of
-    // OrangeScheduleDaily by StaffNo + shift date. No dependency on the Python
-    // ingest, which never processes contractors. Rows already exist there for
-    // contractors but their TimeIn/TimeOut are still empty upstream, so today
-    // this resolves to nothing; it fills in on its own once Orange populates
-    // them, with no further code change.
-    const pairs = data
-      .map((d) => ({ staffNo: d.employee_id, shiftDate: d.date }))
-      .filter((p) => p.staffNo && p.shiftDate);
-    if (pairs.length > 0) {
-      try {
-        const schedulePool = await getPool();
-        const scheduleReq = schedulePool.request();
-        scheduleReq.requestTimeout = CONTRACTOR_QUERY_TIMEOUT_MS;
-        scheduleReq.input("pairs", sql.NVarChar(sql.MAX), JSON.stringify(pairs));
-        const scheduleRes = await scheduleReq.query(`
-          WITH p AS (
-            SELECT staffNo, shiftDate FROM OPENJSON(@pairs)
-            WITH (staffNo NVARCHAR(50) '$.staffNo', shiftDate DATE '$.shiftDate')
-          )
-          SELECT p.staffNo AS StaffNo, p.shiftDate AS ShiftDate,
-                 d.TimeIn, d.TimeOut, d.DayType, d.Description
-          FROM p
-          LEFT JOIN dbo.OrangeScheduleDaily AS d
-            ON d.StaffNo = p.staffNo AND d.ShiftDate = p.shiftDate
-        `);
-        const scheduleRows = (scheduleRes.recordset ?? []) as unknown as Array<{
-          StaffNo: string;
-          ShiftDate: Date | string;
-          TimeIn: unknown;
-          TimeOut: unknown;
-          DayType: string | null;
-          Description: string | null;
-        }>;
-        const scheduleMap = new Map<string, { in: string; out: string; label: string }>();
-        for (const s of scheduleRows) {
-          const staffNo = String(s.StaffNo ?? "").trim();
-          const shiftDate = formatDate(s.ShiftDate);
-          if (!staffNo || !shiftDate) continue;
-          scheduleMap.set(`${staffNo}|${shiftDate}`, {
-            in: formatTime(s.TimeIn),
-            out: formatTime(s.TimeOut),
-            label: String(s.Description ?? s.DayType ?? ""),
-          });
-        }
-        for (const row of data) {
-          const sched = scheduleMap.get(`${row.employee_id}|${row.date}`);
-          if (!sched) continue;
-          row.scheduled_in = sched.in;
-          row.scheduled_out = sched.out;
-          if (sched.label) row.schedule_label = sched.label;
-          row.status_in = scheduleStatus(sched.in, row.actual_in, true);
-          row.status_out = scheduleStatus(sched.out, row.actual_out, false);
-        }
-      } catch (err) {
-        // A schedule lookup failure must not take the attendance rows with it;
-        // the response degrades to the same N/A columns as before.
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn("[Contractors] schedule lookup failed:", message);
-      }
-    }
 
     res.json({ data });
   } catch (err) {

@@ -234,6 +234,38 @@ export async function fetchOrangeEmployeeIds(): Promise<string[]> {
   return rows.map((r: Record<string, unknown>) => String(r["employee_id"] ?? "").trim()).filter((v) => v.length > 0);
 }
 
+type CompanyPrefixMapping = { prefix: string; companyId: string };
+
+/**
+ * Contractors live in the same Orange employee view as MTI staff, but
+ * sp_it_get_day_type only returns their schedule under their own company id
+ * (e.g. staff numbers starting 9038 resolve under "MTI-CBM"). The mapping is
+ * env-driven because RanHR is still registering companies one at a time, and
+ * a new code should not require a code change.
+ *
+ * Format: ORANGE_COMPANY_ID_PREFIX_MAP=9038:MTI-CBM,9007:MTI-WIM
+ */
+function parseCompanyPrefixMap(): CompanyPrefixMapping[] {
+  const raw = process.env.ORANGE_COMPANY_ID_PREFIX_MAP ?? "";
+  const seen = new Set<string>();
+  const out: CompanyPrefixMapping[] = [];
+  for (const pair of raw.split(",")) {
+    const trimmed = pair.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf(":");
+    if (idx <= 0) continue;
+    const prefix = trimmed.slice(0, idx).trim();
+    const companyId = trimmed.slice(idx + 1).trim();
+    // The prefix is interpolated into a LIKE pattern, so keep it alphanumeric.
+    if (!prefix || !companyId || !/^[A-Za-z0-9]+$/.test(prefix)) continue;
+    if (seen.has(prefix)) continue;
+    seen.add(prefix);
+    out.push({ prefix, companyId });
+  }
+  // Longest prefix first so a more specific mapping wins over a broader one.
+  return out.sort((a, b) => b.prefix.length - a.prefix.length);
+}
+
 export async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[]): Promise<OrangeDayTypeRow[]> {
   if (employeeIds.length === 0) return [];
   const orangeSchema = process.env.ORANGE_PROC_SCHEMA && process.env.ORANGE_PROC_SCHEMA.length ? String(process.env.ORANGE_PROC_SCHEMA) : "dbo";
@@ -254,6 +286,19 @@ export async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[
   request.input("companyIdDefault", sql.NVarChar, orangeCompanyIdDefault);
   request.input("companyIdMtibj", sql.NVarChar, orangeCompanyIdMtibj);
 
+  const prefixMap = parseCompanyPrefixMap();
+  const prefixCases = prefixMap.map((m, i) => {
+    request.input(`companyPrefix${i}`, sql.NVarChar, `${m.prefix}%`);
+    request.input(`companyId${i}`, sql.NVarChar, m.companyId);
+    return `WHEN ids.employee_id LIKE @companyPrefix${i} THEN @companyId${i}`;
+  });
+
+  const companyExpr = `CASE
+        WHEN ids.employee_id LIKE 'MTIBJ%' THEN @companyIdMtibj
+        ${prefixCases.join("\n        ")}
+        ELSE @companyIdDefault
+      END`;
+
   const q = `
     SELECT
       ids.employee_id,
@@ -269,7 +314,7 @@ export async function fetchOrangeDayTypeBatch(date: string, employeeIds: string[
     ) AS ids
     OUTER APPLY (
       SELECT TOP 1 day_type, description, time_in, time_out, next_day
-      FROM ${dayTypeQualified}(CASE WHEN ids.employee_id LIKE 'MTIBJ%' THEN @companyIdMtibj ELSE @companyIdDefault END, ids.employee_id, @date)
+      FROM ${dayTypeQualified}(${companyExpr}, ids.employee_id, @date)
     ) AS dt
     ORDER BY ids.employee_id ASC
   `;
