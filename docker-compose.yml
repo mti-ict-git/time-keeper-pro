@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   backend:
     build:
@@ -21,7 +19,12 @@ services:
       start_period: 20s
     volumes:
       - .:/app
-      - /app/node_modules
+      # Named rather than anonymous: an anonymous volume is recreated on every
+      # `up`, and initialising it re-copies node_modules (41k files, ~371MB)
+      # out of the image, which is what made container creation take ~30min.
+      # A named volume is initialised once and reused. Run `docker compose down
+      # -v` after changing dependencies so it is rebuilt from the new image.
+      - backend_node_modules:/app/node_modules
     # Connects to an existing external MSSQL server via DB_SERVER env
 
   web:
@@ -38,7 +41,11 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-      - /app/node_modules
+      - web_node_modules:/app/node_modules
     depends_on:
       backend:
         condition: service_healthy
+
+volumes:
+  backend_node_modules:
+  web_node_modules:
