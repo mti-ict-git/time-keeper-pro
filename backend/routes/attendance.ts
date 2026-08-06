@@ -311,10 +311,50 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
     // every inactive contractor to the table (1000+ rows most days).
     if (search) {
       const presentIds = new Set(data.map((d) => d.employee_id));
-      for (const card of cardMap.values()) {
+      const missing = Array.from(cardMap.values()).filter((card) => {
         const staffNo = String(card.StaffNo ?? "").trim();
-        if (!staffNo || presentIds.has(staffNo)) continue;
+        return staffNo.length > 0 && !presentIds.has(staffNo);
+      });
+
+      // These rows have no attendance day of their own, so show the schedule
+      // in force on the last day of the range. Without it the row answers
+      // "does this person exist?" but not "what hours are they meant to work?".
+      const fallbackSchedule = new Map<string, { scheduledIn: string; scheduledOut: string; label: string }>();
+      if (missing.length > 0) {
+        try {
+          const mtiPool = await getPool();
+          const fbReq = mtiPool.request();
+          fbReq.input(
+            "staffNos",
+            sql.NVarChar(sql.MAX),
+            JSON.stringify(missing.map((c) => String(c.StaffNo ?? "").trim()))
+          );
+          fbReq.input("on", sql.Date, new Date(`${rangeTo}T00:00:00Z`));
+          const fbRes = await fbReq.query(`
+            SELECT d.StaffNo, d.TimeIn, d.TimeOut, d.DayType, d.Description
+            FROM dbo.OrangeScheduleDaily d
+            INNER JOIN OPENJSON(@staffNos) AS s ON d.StaffNo = s.value
+            WHERE d.ShiftDate = @on
+          `);
+          for (const row of (fbRes.recordset ?? []) as Array<Record<string, unknown>>) {
+            const staffNo = String(row["StaffNo"] ?? "").trim();
+            if (!staffNo) continue;
+            fallbackSchedule.set(staffNo, {
+              scheduledIn: formatTime(row["TimeIn"]),
+              scheduledOut: formatTime(row["TimeOut"]),
+              label: String(row["Description"] ?? row["DayType"] ?? ""),
+            });
+          }
+        } catch {
+          fallbackSchedule.clear();
+        }
+      }
+
+      for (const card of missing) {
+        const staffNo = String(card.StaffNo ?? "").trim();
+        if (presentIds.has(staffNo)) continue;
         presentIds.add(staffNo);
+        const sched = fallbackSchedule.get(staffNo);
         data.push({
           employee_id: staffNo,
           employee_name: String(card.Name ?? "").trim(),
@@ -322,13 +362,15 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
           department: String(card.Department ?? "").trim(),
           position: String(card.Position ?? card.Title ?? "").trim(),
           date: "",
-          schedule_label: "",
-          scheduled_in: "",
-          scheduled_out: "",
+          schedule_label: sched?.label ?? "",
+          scheduled_in: sched?.scheduledIn ?? "",
+          scheduled_out: sched?.scheduledOut ?? "",
           actual_in: "",
           actual_out: "",
           controller_in: "",
           controller_out: "",
+          // Left blank on purpose: there is no scan to grade, and "Missing"
+          // would read as an absence when the range simply has no shift.
           status_in: "",
           status_out: "",
         });
