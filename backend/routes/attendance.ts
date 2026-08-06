@@ -303,6 +303,38 @@ attendanceRouter.get("/contractors", async (req: Request, res: Response) => {
       })
       .sort((a, b) => (a.date === b.date ? a.employee_id.localeCompare(b.employee_id) : b.date < a.date ? -1 : 1));
 
+    // A search hit with no scans in the selected range must not look like
+    // "this person doesn't exist" — the identity is real (CardDB has them),
+    // there's just no activity in this window. Append them with blank
+    // attendance columns rather than dropping them. Only applies to a search
+    // hit, not the default browse view: without a search term this would add
+    // every inactive contractor to the table (1000+ rows most days).
+    if (search) {
+      const presentIds = new Set(data.map((d) => d.employee_id));
+      for (const card of cardMap.values()) {
+        const staffNo = String(card.StaffNo ?? "").trim();
+        if (!staffNo || presentIds.has(staffNo)) continue;
+        presentIds.add(staffNo);
+        data.push({
+          employee_id: staffNo,
+          employee_name: String(card.Name ?? "").trim(),
+          company: canonicalCompany(String(card.Company ?? "")),
+          department: String(card.Department ?? "").trim(),
+          position: String(card.Position ?? card.Title ?? "").trim(),
+          date: "",
+          schedule_label: "",
+          scheduled_in: "",
+          scheduled_out: "",
+          actual_in: "",
+          actual_out: "",
+          controller_in: "",
+          controller_out: "",
+          status_in: "",
+          status_out: "",
+        });
+      }
+    }
+
     res.json({ data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
