@@ -340,6 +340,33 @@ def save_attendance_job_state(conn, job_name, last_dt, last_card_no, last_run_at
     conn.commit()
     cursor.close()
 
+def _staff_prefix_list():
+    """
+    Staff-number prefixes the bulk ingest covers.
+
+    Defaults to MTI only. Contractors are opted in per company by adding their
+    staff-number prefix (e.g. 9038 for Cahaya Berkah Morowali), so a company is
+    never swept in before RanHR is ready for it.
+
+    Format: ATTENDANCE_STAFF_PREFIXES=MTI,9038,9007
+    """
+    raw = os.getenv("ATTENDANCE_STAFF_PREFIXES")
+    if raw is None or str(raw).strip() == "":
+        return ["MTI"]
+    out = []
+    for part in str(raw).split(","):
+        p = part.strip()
+        # Interpolated into a LIKE pattern below, so keep it alphanumeric.
+        if p and p.isalnum() and p not in out:
+            out.append(p)
+    return out or ["MTI"]
+
+
+def _staff_prefix_clause(column="Cdb.StaffNo"):
+    prefixes = _staff_prefix_list()
+    return " OR ".join(f"{column} LIKE '{p}%'" for p in prefixes)
+
+
 def retrieve_attendance_transactions(conn_data_db, tr_controller_list, start_dt, end_dt, staff_no=None, watermark_dt=None, watermark_card_no=None):
     """
     Retrieves rows from tblTransaction where Lt.TrDateTime is between start_dt and end_dt,
@@ -365,7 +392,7 @@ def retrieve_attendance_transactions(conn_data_db, tr_controller_list, start_dt,
     if staff_no:
         staff_no_clause = f"AND Cdb.StaffNo = '{_sql_escape(staff_no)}'"
     else:
-        staff_no_clause = "AND Cdb.StaffNo LIKE 'MTI%'"
+        staff_no_clause = f"AND ({_staff_prefix_clause()})"
     
     query_transactions = f"""
     SELECT 
@@ -986,12 +1013,12 @@ def insert_data(df, conn_data_db, conn_orange_temp, insert_att, insert_mcg, forc
             raise Exception("ORANGE-TEMP connection is required for inserting into mcg_clocking_tbl.")
         
         cursor_data_db = conn_data_db.cursor()
-        cursor_data_db.execute("""
-            SELECT CardNo, Name, Title, Position, Department, CardType, 
-                   Company, StaffNo, TrDateTime, TrDate, 
+        cursor_data_db.execute(f"""
+            SELECT CardNo, Name, Title, Position, Department, CardType,
+                   Company, StaffNo, TrDateTime, TrDate,
                    dtTransaction, TrController, ClockEvent, UnitNo
             FROM dbo.tblAttendanceReport
-            WHERE Processed = 0 AND StaffNo LIKE 'MTI%'
+            WHERE Processed = 0 AND ({_staff_prefix_clause('StaffNo')})
         """)
         rows_to_process = cursor_data_db.fetchall()
         
@@ -1040,8 +1067,17 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False, start_da
 
         limit_rows = max(1, int(limit_rows))
         cursor_emp = conn_data_emp.cursor(as_dict=True)
-        filters = ["StaffNo LIKE 'MTI%'", "ClockEvent IN ('Clock In', 'Clock Out')"]
+        filters = ["ClockEvent IN ('Clock In', 'Clock Out')"]
         params = []
+        # An explicit staff number targets exactly that person, the way the
+        # ingest query already treats --staff-no. Without one, stay restricted
+        # to MTI staff: a bulk push must never sweep up contractors, whose
+        # rows are not meant to reach RanHR unless asked for by name.
+        if staff_no:
+            filters.append("StaffNo = %s")
+            params.append(staff_no)
+        else:
+            filters.append(f"({_staff_prefix_clause('StaffNo')})")
         if not repush:
             filters.insert(0, "Processed = 0")
         if start_date:
@@ -1050,9 +1086,6 @@ def push_pending_to_mcg_clocking_tbl(config, limit_rows, dry_run=False, start_da
         if end_date:
             filters.append("TrDate <= %s")
             params.append(end_date)
-        if staff_no:
-            filters.append("StaffNo = %s")
-            params.append(staff_no)
         where_clause = " AND ".join(filters)
         push_query = f"""
             SELECT TOP ({limit_rows})
