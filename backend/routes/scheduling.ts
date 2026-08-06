@@ -947,10 +947,23 @@ function scheduleOrangePrefetchNext(): void {
   }, ms);
 }
 
+// Long enough for the DB pools to finish connecting before the first sweep.
+const ORANGE_PREFETCH_STARTUP_DELAY_MS = 15000;
+
 async function initializeOrangePrefetchScheduler(): Promise<void> {
   try {
     await Promise.all([loadOrangePrefetchSettings(), ensureOrangePrefetchLogsTable()]);
     scheduleOrangePrefetchNext();
+    // The interval alone only fires a full period after boot, so every restart
+    // left up to `intervalMinutes` in which a schedule newly published by RanHR
+    // stayed invisible. runOrangePrefetchNow refuses to run if the persisted
+    // log shows a sweep within the interval, so a restart loop cannot turn this
+    // into repeated full sweeps.
+    if (orangePrefetchEnabled) {
+      setTimeout(() => {
+        void runOrangePrefetchNow();
+      }, ORANGE_PREFETCH_STARTUP_DELAY_MS);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[OrangeScheduleDaily] Scheduler initialization failed:", message);
